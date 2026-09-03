@@ -79,7 +79,8 @@ class WorldEngine:
             "CHARACTER_MOVED", character_id,
             data={"location_id": location.id, "origin": list(origin),
                   "destination": list(destination), "cost_feet": cost,
-                  "movement_left": character.resources.movement},
+                  "movement_left": character.resources.movement,
+                  "path": [list(cell) for cell in path]},
         ))
         return result
 

@@ -20,6 +20,11 @@ escribir comandos y usar botones para mirar, consultar el mapa, ver el estado,
 abrir el inventario o pasar turno. No necesita IA ni dependencias adicionales:
 usa Tkinter, incluido normalmente con Python en Windows.
 
+La interfaz permite introducir la clave de Anthropic y activar o desactivar el
+DM con IA. Si se marca "recordar", la clave se cifra con DPAPI y se guarda en
+las credenciales del usuario de Windows, fuera de la partida JSON. No se guarda
+en el repositorio ni se muestra en el historial.
+
 Arranca con un menu hablado que propone escenarios, pregunta cuantos jugadores
 sois y configura a cada uno; despues abre la consola de juego, donde `ayuda`
 lista los comandos. `dnd-demo` sigue ejecutando la demostracion corta y no

@@ -42,6 +42,7 @@ def test_move_spends_movement_and_publishes_event():
     assert result.movement_left == 20
     assert hero.resources.movement == 20
     assert engine.events.history[-1].type == "CHARACTER_MOVED"
+    assert engine.events.history[-1].data["path"] == [[1, 1], [2, 2]]
 
 
 def test_move_beyond_the_remaining_movement_is_rejected():
