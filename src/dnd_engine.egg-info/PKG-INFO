@@ -1,0 +1,7 @@
+Metadata-Version: 2.4
+Name: dnd-engine
+Version: 0.1.0
+Summary: Motor de dominio para ejecutar aventuras de D&D
+Requires-Python: >=3.11
+Provides-Extra: ai
+Requires-Dist: anthropic>=1.0; extra == "ai"

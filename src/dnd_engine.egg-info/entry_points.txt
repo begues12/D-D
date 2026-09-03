@@ -1,0 +1,3 @@
+[console_scripts]
+dnd-demo = dnd_engine.cli:main
+dnd-play = dnd_engine.console:main
