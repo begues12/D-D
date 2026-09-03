@@ -91,6 +91,25 @@ def test_move_intent_moves_the_character():
     assert result.data["cost_feet"] == 10
 
 
+def test_approach_intent_stops_on_a_free_adjacent_cell():
+    engine = make_game()
+
+    result = execute(engine, Intent("approach", {"target": "goblin"}, "hero"))
+
+    hero = engine.world.get_character("hero")
+    goblin = engine.world.get_character("goblin")
+    assert hero.position != goblin.position
+    assert engine.distance_between("hero", "goblin") == 5
+    assert result.data["destination"] == hero.position
+
+
+def test_direct_move_still_rejects_an_occupied_cell():
+    engine = make_game()
+
+    with pytest.raises(ValueError, match="ya esta ocupada"):
+        execute(engine, Intent("move", {"x": 4, "y": 4}, "hero"))
+
+
 def test_attack_intent_uses_the_first_weapon_by_default():
     engine = make_game([15, 4])
     engine.world.get_character("hero").position = (3, 4)

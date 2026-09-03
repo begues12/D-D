@@ -74,6 +74,9 @@ class GameEngine:
     def move(self, character_id: str, destination: Cell) -> MovementResult:
         return self.world.move(character_id, destination)
 
+    def approach(self, character_id: str, target_id: str) -> MovementResult:
+        return self.world.approach(character_id, target_id)
+
     def enter_location(self, character_id: str, location_id: str, force: bool = False) -> Location:
         return self.world.enter_location(character_id, location_id, force)
 

@@ -70,6 +70,20 @@ def _move(engine: GameEngine, intent: Intent) -> ActionResult:
     )
 
 
+def _approach(engine: GameEngine, intent: Intent) -> ActionResult:
+    target = engine.world.get_character(intent.parameters["target"])
+    result = engine.approach(intent.actor_id, target.id)
+    if result.cost_feet == 0:
+        summary = f"ya esta junto a {target.name}."
+    else:
+        summary = (f"se acerca a {target.name} hasta {result.destination} gastando "
+                   f"{result.cost_feet} pies (le quedan {result.movement_left}).")
+    return ActionResult(intent, summary, {
+        "target_id": target.id, "destination": result.destination,
+        "cost_feet": result.cost_feet, "movement_left": result.movement_left,
+    })
+
+
 def _attack(engine: GameEngine, intent: Intent) -> ActionResult:
     weapon = _weapon_of(engine, intent.actor_id, intent.parameters.get("weapon"))
     target = engine.world.get_character(intent.parameters["target"])
@@ -196,6 +210,9 @@ ACTIONS: dict[str, ActionSpec] = {
             Parameter("x", "Columna de destino.", "int"),
             Parameter("y", "Fila de destino.", "int"),
         ), _move),
+        ActionSpec("approach", "Acercarse a un personaje hasta una casilla libre adyacente.", (
+            Parameter("target", "Id del personaje al que acercarse."),
+        ), _approach),
         ActionSpec("attack", "Atacar a un objetivo con un arma del inventario.", (
             Parameter("target", "Id del objetivo."),
             Parameter("weapon", "Id del arma; por defecto la primera del inventario.",

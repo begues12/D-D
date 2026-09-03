@@ -89,6 +89,8 @@ haya pedido: si dice solo "ataco", es una sola.
 - Los identificadores (personajes, armas, hechizos, puertas, ubicaciones) deben \
 salir literalmente del estado que se te da. No los inventes ni los traduzcas.
 - Las coordenadas son casillas de la cuadricula, no pies.
+- Si el jugador dice acercarse, ir a ver o aproximarse a un personaje, usa la
+    herramienta approach: nunca uses move con la casilla que ocupa el objetivo.
 - Si el jugador no pide una accion del juego (pregunta, charla, algo imposible \
 de expresar con el catalogo), usa la herramienta no_action y explica por que.
 - No decides resultados: no sabes si un ataque acierta, cuanto dano hace ni si \

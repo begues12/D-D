@@ -169,6 +169,7 @@ class Console:
             ("estado", "status"): self.status,
             ("inventario", "inv"): self.inventory,
             ("mover", "move"): self.move,
+            ("acercarse", "approach"): self.approach,
             ("atacar", "attack"): self.attack,
             ("lanzar", "cast"): self.cast,
             ("puerta", "door"): self.use_door,
@@ -206,6 +207,7 @@ class Console:
             "estado [id]               hp, condiciones y recursos",
             "inventario [id]           objetos y hechizos",
             "mover X Y                 moverse a una casilla",
+            "acercarse OBJETIVO        llegar a una casilla libre junto a alguien",
             "atacar OBJETIVO [ARMA]    atacar con un arma",
             "lanzar HECHIZO OBJETIVO   lanzar un hechizo",
             "abrir PUERTA              abrir con la llave del inventario",
@@ -349,6 +351,9 @@ class Console:
 
     def move(self, arguments: list[str]) -> None:
         self._run_intent("move", x=arguments[0], y=arguments[1])
+
+    def approach(self, arguments: list[str]) -> None:
+        self._run_intent("approach", target=arguments[0])
 
     def attack(self, arguments: list[str]) -> None:
         self._run_intent("attack", target=arguments[0],

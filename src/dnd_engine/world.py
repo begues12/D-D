@@ -83,6 +83,33 @@ class WorldEngine:
         ))
         return result
 
+    def approach(self, character_id: str, target_id: str) -> MovementResult:
+        """Acerca a un personaje a otro sin intentar ocupar su casilla."""
+        character = self.get_character(character_id)
+        target = self.get_character(target_id)
+        location = self.location_of(character_id)
+        target_location = self.location_of(target_id)
+        if location.id != target_location.id:
+            raise ValueError(f"{target.name} no esta en '{location.id}'.")
+        if location.grid is None:
+            raise ValueError(f"La ubicacion '{location.id}' no tiene cuadricula.")
+        if character_id == target_id:
+            raise ValueError("No puedes acercarte a ti mismo.")
+        if location.grid and distance_in_feet(character.position, target.position) <= CELL_FEET:
+            return MovementResult(character.id, character.position, character.position, (), 0, character.resources.movement)
+
+        occupied = self.world.occupied_cells(location.id, ignore=character_id)
+        candidates = []
+        for offset_x, offset_y in ((-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)):
+            candidate = (target.position[0] + offset_x, target.position[1] + offset_y)
+            path = location.grid.path(character.position, candidate, occupied)
+            if path is not None and len(path) * CELL_FEET <= character.resources.movement:
+                candidates.append((len(path), candidate[1], candidate[0], candidate))
+        if not candidates:
+            raise ValueError(f"No hay una casilla libre accesible junto a {target.name}.")
+        destination = min(candidates)[-1]
+        return self.move(character_id, destination)
+
     def enter_location(self, character_id: str, location_id: str, force: bool = False) -> Location:
         """Cambia de ubicacion. Sin `force` exige una puerta abierta que las conecte."""
         character = self.get_character(character_id)
