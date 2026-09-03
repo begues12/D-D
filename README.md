@@ -9,6 +9,17 @@ python -m pip install -e .
 python -m dnd_engine     # o: dnd-play
 ```
 
+Para probarlo con una interfaz sencilla de escritorio:
+
+```powershell
+python -m dnd_engine.gui # o: dnd-gui
+```
+
+La interfaz permite crear una campana de prueba, cargar una partida JSON,
+escribir comandos y usar botones para mirar, consultar el mapa, ver el estado,
+abrir el inventario o pasar turno. No necesita IA ni dependencias adicionales:
+usa Tkinter, incluido normalmente con Python en Windows.
+
 Arranca con un menu hablado que propone escenarios, pregunta cuantos jugadores
 sois y configura a cada uno; despues abre la consola de juego, donde `ayuda`
 lista los comandos. `dnd-demo` sigue ejecutando la demostracion corta y no

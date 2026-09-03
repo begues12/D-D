@@ -15,6 +15,7 @@ ai = ["anthropic>=1.0"]
 [project.scripts]
 dnd-play = "dnd_engine.console:main"
 dnd-demo = "dnd_engine.cli:main"
+dnd-gui = "dnd_engine.gui:main"
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

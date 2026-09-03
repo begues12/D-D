@@ -530,6 +530,9 @@ class _OverloadedDungeonMaster:
     def play(self, *_args, **_kwargs):
         raise DungeonMasterError("La API esta sobrecargada (529).", retryable=True)
 
+    def open_scene(self, *_args, **_kwargs):
+        raise DungeonMasterError("La API esta sobrecargada (529).", retryable=True)
+
 
 def test_the_console_prints_the_whole_sequence():
     engine = make_game()
