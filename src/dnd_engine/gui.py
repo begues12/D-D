@@ -164,6 +164,9 @@ class GameWindow:
         self.scene_canvas.pack(fill="both", expand=True)
         self.scene_canvas.bind("<Configure>", lambda _event: self._draw_scene())
 
+        self.roster = tk.Frame(board.body, bg=PALETTE["panel"])
+        self.roster.pack(fill="x", pady=(SPACE["sm"], 0))
+
         page = TexturedPanel(play_area, "parchment", padding=SPACE["sm"], corners=True)
         page.grid(row=1, column=0, sticky="nsew")
         self.history = parchment_text(page.body, height=8)
@@ -198,6 +201,71 @@ class GameWindow:
         self.character_var.set(f"{actor.name}  ·  nivel {actor.level}")
         self.hp_var.set(f"HP  {actor.hp} / {actor.max_hp}")
         self.location_var.set(location.name if location else "Ubicacion desconocida")
+        self._refresh_roster(location)
+
+    # -- quien hay delante -------------------------------------------------
+
+    def _refresh_roster(self, location) -> None:
+        """Una ficha por criatura presente: vida, estado y de quien es el turno."""
+        if not hasattr(self, "roster"):
+            return
+        for child in self.roster.winfo_children():
+            child.destroy()
+        if location is None:
+            return
+        engine = self.console.engine
+        encounter = engine.encounter
+        turn_of = (encounter.order[encounter.current_index]
+                   if encounter is not None and encounter.order else None)
+        if turn_of is not None:
+            tk.Label(self.roster, bg=PALETTE["panel"], fg=PALETTE["red"],
+                     font=FONTS["kicker"],
+                     text=f"COMBATE  ·  RONDA {encounter.round_number}  ·  "
+                          f"TURNO DE {engine.world.get_character(turn_of).name.upper()}"
+                     ).pack(anchor="w", pady=(0, SPACE["xs"]))
+
+        strip = tk.Frame(self.roster, bg=PALETTE["panel"])
+        strip.pack(fill="x")
+        for character_id in sorted(location.occupants):
+            character = engine.world.get_character(character_id)
+            self._roster_pill(strip, character, character_id == turn_of,
+                              character_id == self.console.actor_id)
+
+    def _roster_pill(self, parent: tk.Frame, character, is_turn: bool, is_you: bool) -> None:
+        background = PALETTE["panel_light"] if is_turn else PALETTE["panel"]
+        pill = tk.Frame(parent, bg=background, highlightthickness=1, bd=0,
+                        highlightbackground=PALETTE["gold"] if is_turn else PALETTE["line"])
+        pill.pack(side="left", padx=(0, SPACE["sm"]), pady=2)
+
+        color = (PALETTE["gold"] if is_you else
+                 PALETTE["red"] if type(character).__name__ == "Enemy" else PALETTE["ink"])
+        tk.Label(pill, text=character.name, bg=background, fg=color,
+                 font=FONTS["body_bold"]).pack(anchor="w", padx=SPACE["sm"],
+                                               pady=(SPACE["xs"], 0))
+
+        bar = tk.Canvas(pill, width=118, height=6, bg=background, bd=0,
+                        highlightthickness=0)
+        bar.pack(anchor="w", padx=SPACE["sm"], pady=(3, 0))
+        share = 0 if character.max_hp <= 0 else max(0.0, character.hp / character.max_hp)
+        bar.create_rectangle(0, 0, 118, 6, fill=PALETTE["night"], outline="")
+        if share > 0:
+            # Verde, dorado o rojo: se ve de un vistazo lo que queda.
+            fill = (PALETTE["green"] if share > 0.5 else
+                    PALETTE["gold"] if share > 0.25 else PALETTE["red"])
+            bar.create_rectangle(0, 0, int(118 * share), 6, fill=fill, outline="")
+
+        tk.Label(pill, text=self._state_line(character), bg=background,
+                 fg=PALETTE["muted"], font=FONTS["small"]).pack(
+            anchor="w", padx=SPACE["sm"], pady=(2, SPACE["xs"]))
+
+    def _state_line(self, character) -> str:
+        if character.is_dead:
+            return "muerto"
+        if character.is_dying:
+            saves = character.death_saves
+            return f"agonizando  {saves.successes}/{saves.failures}"
+        state = ", ".join(sorted(one.value for one in character.conditions))
+        return f"{character.hp}/{character.max_hp} hp" + (f"  ·  {state}" if state else "")
 
     def submit(self, command: str | None = None) -> None:
         if self.console is None or self._busy:
