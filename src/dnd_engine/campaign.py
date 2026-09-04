@@ -191,8 +191,22 @@ SCENARIOS: dict[str, dict[str, Any]] = {
         ],
         "npcs": [
             {"id": "innkeeper", "name": "Marta la tabernera", "location": "tavern",
-             "personality": ["seca", "practica"],
-             "knowledge": ["Los ruidos empezaron hace ocho noches."]},
+             "personality": ["seca", "practica", "no se asusta delante de nadie"],
+             "goals": ["Recuperar la bodega antes de que se pierda la cosecha"],
+             "knowledge": [
+                 "Los ruidos empezaron hace ocho noches.",
+                 "La llave de la bodega esta detras de la barra, en un clavo.",
+                 "El gato bajo el martes y no ha vuelto a subir.",
+                 "En la pared del fondo de la bodega hay un boquete que ella no abrio.",
+             ]},
+            {"id": "drunk", "name": "El viejo Cass", "location": "tavern",
+             "personality": ["borracho", "solemne", "se cree escuchado"],
+             "goals": ["Que alguien le pague otra ronda"],
+             "knowledge": [
+                 "Dice que oyo cantar bajo el suelo, en una lengua que no es la nuestra.",
+                 "Jura que hace cuarenta anos taparon un pozo justo donde esta la taberna.",
+                 "Se acuerda del nombre Zarpa, y no sabe de que.",
+             ]},
         ],
         "enemies": [
             {"id": "goblin-1", "name": "Goblin carronero", "max_hp": 9, "armor_class": 13,
@@ -250,6 +264,18 @@ SCENARIOS: dict[str, dict[str, Any]] = {
              "cell_a": [5, 2], "cell_b": [0, 2]},
             {"id": "throne-gate", "a": "gallery", "b": "throne",
              "cell_a": [6, 2], "cell_b": [0, 2], "locked": True, "key_id": "bone-key"},
+        ],
+        "npcs": [
+            {"id": "shepherd", "name": "Ordo, el pastor", "location": "vestibule",
+             "cell": [0, 4],
+             "personality": ["culpable", "callado", "no entra en la cripta"],
+             "goals": ["Que alguien vuelva a poner el sello y no le culpen"],
+             "knowledge": [
+                 "Movio el sello de piedra hace tres semanas, buscando refugio.",
+                 "Desde esa noche los perros no suben a la colina.",
+                 "Dentro hay doce nichos y solo uno seguia cerrado.",
+                 "Al rey lo enterraron sin nombre para que nadie pudiera llamarlo.",
+             ]},
         ],
         "enemies": [
             {"id": "skeleton-1", "name": "Esqueleto", "max_hp": 11, "armor_class": 13,
@@ -312,8 +338,14 @@ SCENARIOS: dict[str, dict[str, Any]] = {
         ],
         "npcs": [
             {"id": "apprentice", "name": "Nel, la aprendiza", "location": "stairs",
-             "personality": ["asustada", "leal"],
-             "knowledge": ["El maestro dejo de responder tras abrir el frasco negro."]},
+             "personality": ["asustada", "leal", "habla deprisa cuando miente"],
+             "goals": ["Sacar al maestro de ahi arriba, sea lo que sea que quede de el"],
+             "knowledge": [
+                 "El maestro dejo de responder tras abrir el frasco negro.",
+                 "Lo que baja por la escalera huele a vinagre y a pelo quemado.",
+                 "La puerta del laboratorio se cierra sola desde dentro.",
+                 "El maestro llevaba tres noches sin dormir antes de subir a la azotea.",
+             ]},
         ],
         "enemies": [
             {"id": "homunculus-1", "name": "Homunculo", "max_hp": 10, "armor_class": 13,
@@ -391,7 +423,14 @@ SCENARIOS: dict[str, dict[str, Any]] = {
         ],
         "npcs": [
             {"id": "carter", "name": "Bran, el carretero", "location": "shore",
-             "personality": ["nervioso"], "knowledge": ["Solo desaparecen de noche."]},
+             "personality": ["nervioso", "supersticioso", "no mira el agua al hablar"],
+             "goals": ["Cruzar el vado de dia y no volver a pasar por aqui"],
+             "knowledge": [
+                 "Solo desaparecen de noche.",
+                 "Los carros aparecen despues rio abajo, vacios y sin una rueda.",
+                 "Los caballos se paran solos antes de meter la pata en el agua.",
+                 "Su hermano cruzo el martes y no ha llegado al otro lado.",
+             ]},
         ],
         "quest": {
             "id": "the-ford", "name": "Los carros del vado",

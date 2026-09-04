@@ -195,7 +195,9 @@ def _spoke(memory: "CampaignMemory", event: Event) -> tuple[str | None, str] | N
         text += f' y le dijo: "{said}"'
     if answer:
         text += f'. {npc} conto: "{answer}"'
-    return f"hablado:{event.target_id}:{event.data.get('times')}", text + "."
+    # Un hecho por persona, con lo ultimo que conto: la secuencia entera vive
+    # en la cronica, pero lo que se sabe de cada uno tiene que sobrevivir.
+    return f"hablado:{event.target_id}", text + "."
 
 
 _HANDLERS: dict[str, Callable[[CampaignMemory, Event], tuple[str | None, str] | None]] = {

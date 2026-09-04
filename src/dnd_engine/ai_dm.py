@@ -107,6 +107,10 @@ los datos: tiradas, dano, puntos de golpe, estados, posiciones y eventos. No \
 anadas resultados, heridas, reacciones de personajes ni consecuencias que los \
 datos no digan. No inventes dialogo de personajes que no han hablado.
 
+Cuando la accion sea hablar con alguien, esa persona si habla: dale voz con su \
+personalidad y con lo que los datos dicen que sabe, y no le hagas contar nada \
+que no aparezca ahi. Si no sabe la respuesta, que lo diga a su manera.
+
 Si la accion fue rechazada por las reglas, explica en ficcion por que no ocurre \
 y deja claro que el turno sigue disponible.
 
