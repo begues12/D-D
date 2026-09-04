@@ -126,6 +126,22 @@ def _cast(engine: GameEngine, intent: Intent) -> ActionResult:
     )
 
 
+def _talk(engine: GameEngine, intent: Intent) -> ActionResult:
+    npc, answer = engine.talk(intent.actor_id, intent.parameters["target"],
+                              intent.parameters.get("say", ""))
+    said = intent.parameters.get("say", "")
+    summary = f"habla con {npc.name}" + (f': "{said}"' if said else ".")
+    if answer:
+        summary += f' {npc.name} cuenta: "{answer}"'
+    return ActionResult(intent, summary, {
+        "npc_id": npc.id, "npc_name": npc.name, "said": said, "answer": answer,
+        # Con esto el DM le pone voz sin inventarse quien es. Los secretos no
+        # viajan: que salgan o no es cosa de la ficcion, no del catalogo.
+        "personality": list(npc.personality), "goals": list(npc.goals),
+        "knows": sorted(npc.knowledge),
+    })
+
+
 def _take(engine: GameEngine, intent: Intent) -> ActionResult:
     item = engine.take_item(intent.actor_id, intent.parameters["item"])
     return ActionResult(intent, f"coge {item.name}.", {"item_id": item.id})
@@ -226,6 +242,11 @@ ACTIONS: dict[str, ActionSpec] = {
             Parameter("spell", "Id del hechizo."),
             Parameter("target", "Id del objetivo."),
         ), _cast),
+        ActionSpec("talk", "Hablar con un personaje no jugador que este presente. "
+                   "No cuesta accion y no cambia el mundo.", (
+            Parameter("target", "Id del personaje con el que se habla."),
+            Parameter("say", "Lo que le dices, con tus palabras.", required=False),
+        ), _talk),
         ActionSpec("take", "Coger un objeto del suelo de la ubicacion actual.", (
             Parameter("item", "Id del objeto."),
         ), _take),

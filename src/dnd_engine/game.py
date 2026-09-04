@@ -4,7 +4,7 @@ from .encounter import Encounter
 from .events import Event, EventBus
 from .map import Cell, Door, distance_in_feet
 from .memory import CampaignMemory
-from .models import Character, Consumable, Enemy, Item, Location, Quest, World
+from .models import Character, Consumable, Enemy, Item, Location, NPC, Quest, World
 from .quest import QuestEngine
 from .rules import Advantage, AttackResult, CombatRules, DeathSaveResult, ItemUseResult
 from .world import MovementResult, WorldEngine
@@ -82,6 +82,34 @@ class GameEngine:
 
     def use_door(self, character_id: str, door_id: str) -> Location:
         return self.world.use_door(character_id, door_id)
+
+    def talk(self, character_id: str, npc_id: str, said: str = "") -> tuple[NPC, str]:
+        """Hablar con un PNJ presente. Devuelve el PNJ y lo que cuenta esta vez.
+
+        No cuesta accion -hablar es gratis en el turno- y no cambia el mundo: lo
+        unico que produce es un evento y una linea de lo que ese PNJ sabe. Los
+        `secrets` no salen de aqui; para eso esta el DM, que decide si se sueltan.
+        """
+        npc = self.world.get_character(npc_id)
+        if not isinstance(npc, NPC):
+            raise ValueError(f"Con '{npc_id}' no se puede conversar.")
+        if not npc.is_conscious:
+            raise ValueError(f"{npc.name} no esta en condiciones de responder.")
+        here = self.world.location_of(character_id)
+        if here is None or npc_id not in here.occupants:
+            raise ValueError(f"{npc.name} no esta aqui.")
+
+        # Se va contando lo que sabe en orden, y vuelve a empezar cuando se acaba:
+        # asi insistir sirve de algo y no hace falta guardar estado en el PNJ.
+        knowledge = sorted(npc.knowledge)
+        told = sum(1 for one in self.events.history
+                   if one.type == "NPC_SPOKEN_TO" and one.target_id == npc_id)
+        line = knowledge[told % len(knowledge)] if knowledge else ""
+        self.events.publish(Event(
+            "NPC_SPOKEN_TO", character_id, npc_id,
+            {"said": said, "answer": line, "times": told + 1},
+        ))
+        return npc, line
 
     def use_item(
         self, user_id: str, item_id: str, target_id: str | None = None,

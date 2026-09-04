@@ -175,6 +175,7 @@ class Console:
             ("lanzar", "cast"): self.cast,
             ("puerta", "door"): self.use_door,
             ("abrir", "unlock"): self.unlock_door,
+            ("hablar", "talk"): self.talk,
             ("coger", "take"): self.take_item,
             ("usar", "use"): self.use_item,
             ("soltar", "drop"): self.drop_item,
@@ -213,6 +214,7 @@ class Console:
             "atacar OBJETIVO [ARMA]    atacar con un arma",
             "lanzar HECHIZO OBJETIVO   lanzar un hechizo",
             "abrir PUERTA              abrir con la llave del inventario",
+            "hablar PNJ [QUE LE DICES] hablar con alguien de la sala",
             "coger OBJETO              recoger algo del suelo",
             "usar OBJETO [OBJETIVO]    beber o administrar un consumible",
             "soltar OBJETO             dejar algo en el suelo",
@@ -372,6 +374,14 @@ class Console:
 
     def unlock_door(self, arguments: list[str]) -> None:
         self._run_intent("unlock_door", door=arguments[0])
+
+    def talk(self, arguments: list[str]) -> None:
+        if not arguments:
+            raise ValueError("Con quien hablo? Escribe: hablar PNJ [lo que le dices]")
+        parameters = {"target": arguments[0]}
+        if len(arguments) > 1:
+            parameters["say"] = " ".join(arguments[1:])
+        self._run_intent("talk", **parameters)
 
     def take_item(self, arguments: list[str]) -> None:
         self._run_intent("take", item=arguments[0])

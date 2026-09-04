@@ -184,7 +184,22 @@ def _combat_ended(memory: CampaignMemory, event: Event):
     return None, f"Termino un combate en la ronda {event.data.get('round')}."
 
 
+def _spoke(memory: "CampaignMemory", event: Event) -> tuple[str | None, str] | None:
+    """Con quien se ha hablado y que conto: media aventura vive en esto."""
+    who = memory._name(event.actor_id)
+    npc = memory._name(event.target_id)
+    said = event.data.get("said")
+    answer = event.data.get("answer")
+    text = f"{who} hablo con {npc}"
+    if said:
+        text += f' y le dijo: "{said}"'
+    if answer:
+        text += f'. {npc} conto: "{answer}"'
+    return f"hablado:{event.target_id}:{event.data.get('times')}", text + "."
+
+
 _HANDLERS: dict[str, Callable[[CampaignMemory, Event], tuple[str | None, str] | None]] = {
+    "NPC_SPOKEN_TO": _spoke,
     "NPC_DIES": _died,
     "CHARACTER_DOWNED": _downed,
     "CHARACTER_STABILIZED": _stabilized,
