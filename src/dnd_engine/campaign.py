@@ -5,8 +5,9 @@ convierte en un `GameEngine` jugable.
 
 Los escenarios son *planos* (`dict`), no codigo: locations, doors, enemies y
 quest en forma de datos. Anadir uno es anadir una entrada a `SCENARIOS`, y ese
-mismo formato es el que podra generar un modelo mas adelante sin tocar el
-constructor.
+mismo formato es el que genera la fragua (`forge.py`) cuando el grupo prefiere
+una aventura inventada: si `CampaignSetup.blueprint` viene lleno, manda sobre el
+catalogo y `build_campaign` no nota la diferencia.
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ import textwrap
 from dataclasses import dataclass, field
 from typing import Any
 
+from .forge import validate_scenario
 from .game import GameEngine
 from .map import Door, Grid
 from .models import (
@@ -94,35 +96,31 @@ ARCHETYPES: dict[str, Archetype] = {one.id: one for one in (
         "guerrero", "Guerrero", "Aguanta y pega. El mas sencillo de llevar.",
         {"strength": 16, "dexterity": 12, "constitution": 15},
         max_hp=22, armor_class=16,
-        weapon={"id": "longsword", "name": "Espada larga", "damage_die": 8,
-                "damage_bonus": 3, "attack_bonus": 5, "reach": 5},
+        weapon={"id": "longsword", "name": "Espada larga", "damage": "1d8+3", "attack_bonus": 5, "reach": 5},
         items=({"id": "shield", "name": "Escudo"},
                {"id": "rations", "name": "Raciones de viaje"},
                {"id": "potion", "name": "Pocion de curacion",
-                "effect": "heal", "dice": 8, "bonus": 2}),
+                "effect": "heal", "healing": "1d8+2"}),
     ),
     Archetype(
         "explorador", "Explorador", "Golpea de lejos y se mueve bien.",
         {"strength": 13, "dexterity": 16, "constitution": 13},
         max_hp=17, armor_class=14,
-        weapon={"id": "shortbow", "name": "Arco corto", "damage_die": 6,
-                "damage_bonus": 3, "attack_bonus": 6, "reach": 80},
+        weapon={"id": "shortbow", "name": "Arco corto", "damage": "1d6+3", "attack_bonus": 6, "reach": 80},
         items=({"id": "rope", "name": "Cuerda de canamo"},
                {"id": "torch", "name": "Antorcha"},
                {"id": "potion", "name": "Pocion de curacion",
-                "effect": "heal", "dice": 8, "bonus": 2}),
+                "effect": "heal", "healing": "1d8+2"}),
     ),
     Archetype(
         "mago", "Mago", "Fragil, pero cambia el combate con un hechizo.",
         {"strength": 10, "dexterity": 14, "constitution": 12, "intelligence": 16},
         max_hp=13, armor_class=12,
-        weapon={"id": "dagger", "name": "Daga", "damage_die": 4,
-                "damage_bonus": 1, "attack_bonus": 3, "reach": 5},
+        weapon={"id": "dagger", "name": "Daga", "damage": "1d4+1", "attack_bonus": 3, "reach": 5},
         items=({"id": "spellbook", "name": "Libro de conjuros"},
                {"id": "potion", "name": "Pocion de curacion",
-                "effect": "heal", "dice": 8, "bonus": 2}),
-        spells=({"id": "firebolt", "name": "Rayo de fuego", "level": 1, "damage_die": 8,
-                 "damage_bonus": 2, "saving_ability": "dexterity", "save_dc": 14,
+                "effect": "heal", "healing": "1d8+2"}),
+        spells=({"id": "firebolt", "name": "Rayo de fuego", "level": 1, "damage": "1d8+2", "saving_ability": "dexterity", "save_dc": 14,
                  "range_feet": 60},
                 {"id": "hold", "name": "Sujetar persona", "level": 1,
                  "saving_ability": "wisdom", "save_dc": 14, "condition": "paralyzed",
@@ -133,12 +131,11 @@ ARCHETYPES: dict[str, Archetype] = {one.id: one for one in (
         "picaro", "Picaro", "Poco aguante, mucha iniciativa y ganzuas.",
         {"strength": 12, "dexterity": 16, "constitution": 12, "charisma": 14},
         max_hp=15, armor_class=14,
-        weapon={"id": "dagger", "name": "Daga arrojadiza", "damage_die": 4,
-                "damage_bonus": 3, "attack_bonus": 6, "reach": 20},
+        weapon={"id": "dagger", "name": "Daga arrojadiza", "damage": "1d4+3", "attack_bonus": 6, "reach": 20},
         items=({"id": "lockpicks", "name": "Ganzuas"},
                {"id": "cloak", "name": "Capa raida"},
                {"id": "potion", "name": "Pocion de curacion",
-                "effect": "heal", "dice": 8, "bonus": 2}),
+                "effect": "heal", "healing": "1d8+2"}),
     ),
 )}
 
@@ -182,7 +179,7 @@ SCENARIOS: dict[str, dict[str, Any]] = {
              "grid": {"width": 6, "height": 4, "blocked": [[2, 1], [2, 2], [4, 0]]},
              "items": [{"id": "cellar-brew", "name": "Frasco de aguardiente", "cell": [1, 3],
                         "description": "Marta lo escondia aqui.", "effect": "heal",
-                        "dice": 6, "bonus": 1}]},
+                        "healing": "1d6+1"}]},
             {"id": "tunnel", "name": "Tunel excavado",
              "description": "Alguien ha abierto un paso en la pared de la bodega.",
              "grid": {"width": 5, "height": 3, "blocked": [[2, 0]]}},
@@ -201,12 +198,12 @@ SCENARIOS: dict[str, dict[str, Any]] = {
             {"id": "goblin-1", "name": "Goblin carronero", "max_hp": 9, "armor_class": 13,
              "xp": 50, "location": "cellar", "cell": [5, 3],
              "abilities": {"strength": 12, "dexterity": 14},
-             "weapon": {"name": "Cimitarra", "damage_die": 6, "damage_bonus": 1,
+             "weapon": {"name": "Cimitarra", "damage": "1d6+1",
                         "attack_bonus": 4}},
             {"id": "goblin-boss", "name": "Zarpa, jefe goblin", "max_hp": 18,
              "armor_class": 15, "xp": 200, "location": "tunnel", "cell": [4, 1],
              "abilities": {"strength": 14, "dexterity": 14},
-             "weapon": {"name": "Hacha mellada", "damage_die": 8, "damage_bonus": 2,
+             "weapon": {"name": "Hacha mellada", "damage": "1d8+2",
                         "attack_bonus": 5}},
         ],
         "quest": {
@@ -243,7 +240,7 @@ SCENARIOS: dict[str, dict[str, Any]] = {
                         "description": "Monedas verdes de moho."},
                        {"id": "grave-balm", "name": "Balsamo funerario", "cell": [6, 4],
                         "description": "Aun huele a resina.", "effect": "heal",
-                        "dice": 8, "bonus": 1, "uses": 2}]},
+                        "healing": "1d8+1", "uses": 2}]},
             {"id": "throne", "name": "Camara del trono",
              "description": "Un asiento de basalto y una corona sin cabeza.",
              "grid": {"width": 5, "height": 5, "blocked": [[2, 2]]}},
@@ -258,17 +255,17 @@ SCENARIOS: dict[str, dict[str, Any]] = {
             {"id": "skeleton-1", "name": "Esqueleto", "max_hp": 11, "armor_class": 13,
              "xp": 50, "location": "vestibule", "cell": [5, 4],
              "abilities": {"strength": 12, "dexterity": 14},
-             "weapon": {"name": "Espada corta oxidada", "damage_die": 6, "damage_bonus": 1,
+             "weapon": {"name": "Espada corta oxidada", "damage": "1d6+1",
                         "attack_bonus": 4}},
             {"id": "skeleton-2", "name": "Esqueleto arquero", "max_hp": 9, "armor_class": 13,
              "xp": 50, "location": "gallery", "cell": [6, 0],
              "abilities": {"strength": 10, "dexterity": 16},
-             "weapon": {"name": "Arco podrido", "damage_die": 6, "damage_bonus": 0,
+             "weapon": {"name": "Arco podrido", "damage": "1d6",
                         "attack_bonus": 4, "reach": 60}},
             {"id": "barrow-king", "name": "El Rey Sin Nombre", "max_hp": 30,
              "armor_class": 16, "xp": 450, "location": "throne", "cell": [2, 0],
              "abilities": {"strength": 16, "dexterity": 12},
-             "weapon": {"name": "Espada de tumulo", "damage_die": 10, "damage_bonus": 3,
+             "weapon": {"name": "Espada de tumulo", "damage": "1d10+3",
                         "attack_bonus": 6}},
         ],
         "quest": {
@@ -303,7 +300,7 @@ SCENARIOS: dict[str, dict[str, Any]] = {
                         "description": "Vacio, y aun asi pesa."},
                        {"id": "green-draught", "name": "Brebaje verde", "cell": [0, 5],
                         "description": "Etiquetado con letra apresurada.",
-                        "effect": "heal", "dice": 10, "bonus": 0}]},
+                        "effect": "heal", "healing": "1d10"}]},
             {"id": "roof", "name": "Azotea",
              "description": "Viento, un pararrayos torcido y el cielo demasiado cerca.",
              "grid": {"width": 5, "height": 5}},
@@ -322,17 +319,17 @@ SCENARIOS: dict[str, dict[str, Any]] = {
             {"id": "homunculus-1", "name": "Homunculo", "max_hp": 10, "armor_class": 13,
              "xp": 50, "location": "lab", "cell": [6, 0],
              "abilities": {"strength": 10, "dexterity": 16},
-             "weapon": {"name": "Dientes de vidrio", "damage_die": 4, "damage_bonus": 2,
+             "weapon": {"name": "Dientes de vidrio", "damage": "1d4+2",
                         "attack_bonus": 5}},
             {"id": "homunculus-2", "name": "Homunculo deforme", "max_hp": 14,
              "armor_class": 14, "xp": 100, "location": "lab", "cell": [6, 5],
              "abilities": {"strength": 14, "dexterity": 12},
-             "weapon": {"name": "Brazo fundido", "damage_die": 6, "damage_bonus": 2,
+             "weapon": {"name": "Brazo fundido", "damage": "1d6+2",
                         "attack_bonus": 5}},
             {"id": "the-thing", "name": "Lo que quedo del alquimista", "max_hp": 26,
              "armor_class": 15, "xp": 450, "location": "roof", "cell": [2, 0],
              "abilities": {"strength": 16, "dexterity": 10},
-             "weapon": {"name": "Zarpa acida", "damage_die": 8, "damage_bonus": 4,
+             "weapon": {"name": "Zarpa acida", "damage": "1d8+4",
                         "attack_bonus": 6}},
         ],
         "quest": {
@@ -366,7 +363,7 @@ SCENARIOS: dict[str, dict[str, Any]] = {
                         "cell": [2, 4], "description": "De uno de los carros perdidos."},
                        {"id": "marsh-poultice", "name": "Cataplasma de juncos", "cell": [4, 2],
                         "description": "Alguien acampo aqui.", "effect": "heal",
-                        "dice": 6, "bonus": 2}]},
+                        "healing": "1d6+2"}]},
             {"id": "ruin", "name": "Ruina sumergida",
              "description": "Media capilla asomando del agua negra.",
              "grid": {"width": 6, "height": 4, "blocked": [[2, 1], [3, 1], [2, 2]]}},
@@ -379,17 +376,17 @@ SCENARIOS: dict[str, dict[str, Any]] = {
             {"id": "frog", "name": "Rana gigante", "max_hp": 12, "armor_class": 12,
              "xp": 50, "location": "islet", "cell": [4, 0],
              "abilities": {"strength": 13, "dexterity": 13},
-             "weapon": {"name": "Mordisco", "damage_die": 6, "damage_bonus": 1,
+             "weapon": {"name": "Mordisco", "damage": "1d6+1",
                         "attack_bonus": 4}},
             {"id": "lizardfolk", "name": "Hombre-lagarto", "max_hp": 16, "armor_class": 15,
              "xp": 100, "location": "ruin", "cell": [5, 0],
              "abilities": {"strength": 15, "dexterity": 12},
-             "weapon": {"name": "Lanza de hueso", "damage_die": 8, "damage_bonus": 2,
+             "weapon": {"name": "Lanza de hueso", "damage": "1d8+2",
                         "attack_bonus": 5, "reach": 10}},
             {"id": "drowned-priest", "name": "El sacerdote ahogado", "max_hp": 28,
              "armor_class": 14, "xp": 450, "location": "ruin", "cell": [5, 3],
              "abilities": {"strength": 15, "dexterity": 10},
-             "weapon": {"name": "Cadena de incensario", "damage_die": 8, "damage_bonus": 3,
+             "weapon": {"name": "Cadena de incensario", "damage": "1d8+3",
                         "attack_bonus": 5, "reach": 10}},
         ],
         "npcs": [
@@ -435,13 +432,22 @@ class CampaignSetup:
     premise: str = ""
     use_ai_dm: bool = False
     title: str = ""
+    # Plano de una aventura inventada por la IA. Si esta, manda sobre `scenario`,
+    # que pasa a ser solo su nombre corto.
+    blueprint: dict[str, Any] | None = None
+
+    @property
+    def is_forged(self) -> bool:
+        return self.blueprint is not None
 
     def validate(self) -> None:
-        for value, catalog, what in (
-            (self.scenario, SCENARIOS, "escenario"),
-            (self.tone, TONES, "tono"),
-            (self.difficulty, DIFFICULTIES, "dificultad"),
-        ):
+        catalogs = [(self.tone, TONES, "tono"),
+                    (self.difficulty, DIFFICULTIES, "dificultad")]
+        if self.is_forged:
+            validate_scenario(self.blueprint)
+        else:
+            catalogs.append((self.scenario, SCENARIOS, "escenario"))
+        for value, catalog, what in catalogs:
             if value not in catalog:
                 raise ValueError(
                     f"No existe el {what} '{value}'. Opciones: {', '.join(sorted(catalog))}."
@@ -464,8 +470,13 @@ class CampaignSetup:
             seen.add(player.id)
 
     @property
+    def scenario_blueprint(self) -> dict[str, Any]:
+        """El plano que se va a jugar, venga del catalogo o de la fragua."""
+        return self.blueprint if self.is_forged else SCENARIOS[self.scenario]
+
+    @property
     def campaign_title(self) -> str:
-        return self.title or SCENARIOS[self.scenario]["name"]
+        return self.title or self.scenario_blueprint["name"]
 
     @property
     def party_size(self) -> int:
@@ -477,6 +488,7 @@ class CampaignSetup:
                         for one in self.players],
             "scenario": self.scenario, "tone": self.tone, "difficulty": self.difficulty,
             "premise": self.premise, "use_ai_dm": self.use_ai_dm, "title": self.title,
+            "blueprint": self.blueprint,
         }
 
     @classmethod
@@ -502,7 +514,8 @@ class CampaignSetup:
             f"    - {one.name}, {ARCHETYPES[one.archetype].name}" for one in self.players)
         return "\n".join((
             f"  Campana:     {self.campaign_title}",
-            f"  Escenario:   {SCENARIOS[self.scenario]['name']}",
+            f"  Escenario:   {self.scenario_blueprint['name']}"
+            + ("  (inventada por la IA)" if self.is_forged else ""),
             f"  Tono:        {TONES[self.tone].name}",
             f"  Dificultad:  {DIFFICULTIES[self.difficulty].name}",
             f"  Grupo ({self.party_size}):",
@@ -514,7 +527,7 @@ class CampaignSetup:
 
 def story_brief(setup: CampaignSetup) -> str:
     """Bloque estable que se anade al prompt de sistema del DM."""
-    scenario = SCENARIOS[setup.scenario]
+    scenario = setup.scenario_blueprint
     party = ", ".join(
         f"{one.name} ({one.id}, {ARCHETYPES[one.archetype].name})" for one in setup.players)
     lines = [
@@ -531,8 +544,8 @@ def story_brief(setup: CampaignSetup) -> str:
 
 
 def scenario_intro(setup: CampaignSetup) -> str:
-    blueprint = SCENARIOS[setup.scenario]
-    return blueprint.get("intro", blueprint["description"])
+    blueprint = setup.scenario_blueprint
+    return blueprint.get("intro") or blueprint["description"]
 
 
 def briefing(engine: GameEngine, actor_id: str, intro: str | None = None) -> str:
@@ -618,7 +631,7 @@ PARTY_HP_SCALE = 0.35
 def build_campaign(setup: CampaignSetup, roller=None) -> GameEngine:
     """Convierte la configuracion en una partida lista para jugar."""
     setup.validate()
-    blueprint = SCENARIOS[setup.scenario]
+    blueprint = setup.scenario_blueprint
     difficulty = DIFFICULTIES[setup.difficulty]
     party_scale = 1 + PARTY_HP_SCALE * (setup.party_size - 1)
 
@@ -710,8 +723,8 @@ def _build_item(data: dict[str, Any]) -> Item:
     if "effect" not in data:
         return Item(*common)
     return Consumable(
-        *common, effect=ItemEffect(data["effect"]), dice=data.get("dice", 0),
-        bonus=data.get("bonus", 0), uses=data.get("uses", 1),
+        *common, effect=ItemEffect(data["effect"]), healing=data.get("healing", "0"),
+        uses=data.get("uses", 1),
         condition=Condition(data["condition"]) if data.get("condition") else None,
     )
 

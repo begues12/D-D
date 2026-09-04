@@ -5,6 +5,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from .dice import Dice
 from .events import Event
 from .game import GameEngine
 from .map import Door, Grid
@@ -205,15 +206,16 @@ def _item_body(item: Item) -> dict[str, Any]:
     if isinstance(item, Consumable):
         return {"kind": "consumable", "id": item.id, "name": item.name,
                 "description": item.description, "effect": item.effect.value,
-                "dice": item.dice, "bonus": item.bonus, "uses": item.uses,
+                "healing": str(item.healing), "uses": item.uses,
                 "condition": item.condition.value if item.condition else None}
     if isinstance(item, Weapon):
         return {"kind": "weapon", "id": item.id, "name": item.name, "description": item.description,
-                "damage_die": item.damage_die, "damage_bonus": item.damage_bonus,
-                "attack_bonus": item.attack_bonus, "reach": item.reach}
+                "damage": str(item.damage), "attack_bonus": item.attack_bonus,
+                "reach": item.reach}
     if isinstance(item, Spell):
         return {"kind": "spell", "id": item.id, "name": item.name, "description": item.description,
-                "level": item.level, "damage_die": item.damage_die, "damage_bonus": item.damage_bonus,
+                "level": item.level,
+                "damage": str(item.damage) if item.damage is not None else None,
                 "saving_ability": item.saving_ability, "save_dc": item.save_dc,
                 "condition": item.condition.value if item.condition else None,
                 "duration_rounds": item.duration_rounds, "range_feet": item.range_feet}
@@ -224,20 +226,37 @@ def _item_from_dict(data: dict[str, Any]) -> Item:
     if data["kind"] == "consumable":
         return _with_cell(Consumable(
             data["id"], data["name"], data.get("description", ""),
-            effect=ItemEffect(data.get("effect", "heal")), dice=data.get("dice", 0),
-            bonus=data.get("bonus", 0), uses=data.get("uses", 1),
+            effect=ItemEffect(data.get("effect", "heal")), healing=_healing_of(data),
+            uses=data.get("uses", 1),
             condition=Condition(data["condition"]) if data.get("condition") else None,
         ), data)
     if data["kind"] == "weapon":
-        weapon = Weapon(**{key: data[key] for key in ("id", "name", "description", "damage_die", "damage_bonus", "attack_bonus")})
+        weapon = Weapon(data["id"], data["name"], data.get("description", ""),
+                        damage=_damage_of(data), attack_bonus=data.get("attack_bonus", 0))
         weapon.reach = data.get("reach", weapon.reach)
         return _with_cell(weapon, data)
     if data["kind"] == "spell":
-        values = {key: data[key] for key in ("id", "name", "description", "level", "damage_die", "damage_bonus", "saving_ability", "save_dc", "duration_rounds")}
+        values = {key: data[key] for key in ("id", "name", "description", "level", "saving_ability", "save_dc", "duration_rounds")}
+        values["damage"] = _damage_of(data, default=None)
         values["condition"] = Condition(data["condition"]) if data.get("condition") else None
         values["range_feet"] = data.get("range_feet", 30)
         return _with_cell(Spell(**values), data)
     return _with_cell(Item(data["id"], data["name"], data.get("description", "")), data)
+
+
+def _damage_of(data: dict[str, Any], default: Any = "1d8") -> Any:
+    """Lee `damage`, y si no esta, el `damage_die`/`damage_bonus` de las partidas antiguas."""
+    if data.get("damage") is not None:
+        return data["damage"]
+    if data.get("damage_die") is None:
+        return default
+    return Dice(1, data["damage_die"], data.get("damage_bonus", 0))
+
+
+def _healing_of(data: dict[str, Any]) -> Any:
+    if data.get("healing") is not None:
+        return data["healing"]
+    return Dice(1, data["dice"], data.get("bonus", 0)) if data.get("dice") else Dice(0, 0, data.get("bonus", 0))
 
 
 def _with_cell(item: Item, data: dict[str, Any]) -> Item:

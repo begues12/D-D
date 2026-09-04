@@ -15,6 +15,8 @@ from dnd_engine.campaign import (
     scenario_intro,
     story_brief,
 )
+from dnd_engine.ai_dm import DungeonMasterError
+from dnd_engine.forge import Pitch
 from dnd_engine.menu import Cancelled, SetupMenu
 from dnd_engine.models import Consumable, Enemy, ItemEffect, Weapon
 from dnd_engine.persistence import load_game, save_game
@@ -281,14 +283,65 @@ def test_summary_lists_the_whole_party():
 # -- menu ---------------------------------------------------------------------
 
 
-def menu(script):
-    return SetupMenu(io.StringIO(script), io.StringIO())
+FORGED = {
+    "name": "El pozo de los nombres", "description": "Algo contesta desde el fondo.",
+    "intro": "El pozo lleva seco once anos y aun asi alguien pide agua.",
+    "start": "brocal",
+    "locations": [
+        {"id": "brocal", "name": "Brocal del pozo", "description": "Piedra gastada.",
+         "items": [{"id": "well-key", "name": "Llave del torno"}]},
+        {"id": "fondo", "name": "Fondo del pozo", "description": "Barro y huesos.",
+         "grid": {"width": 5, "height": 5, "blocked": [[2, 2]]}},
+    ],
+    "doors": [{"id": "torno", "a": "brocal", "b": "fondo", "cell_b": [0, 0],
+               "locked": True, "key_id": "well-key"}],
+    "enemies": [{"id": "cosa", "name": "Lo que pide agua", "max_hp": 20,
+                 "armor_class": 14, "xp": 200, "location": "fondo", "cell": [4, 4],
+                 "weapon": {"name": "Manos largas", "damage": "1d8+2",
+                            "attack_bonus": 5}}],
+    "quest": {"id": "el-pozo", "name": "Callar el pozo", "objectives": [
+        {"id": "bajar", "description": "Bajar al fondo",
+         "event_type": "PLAYER_ENTERED_LOCATION", "target_id": "fondo"},
+        {"id": "matarlo", "description": "Acabar con ello",
+         "event_type": "NPC_DIES", "target_id": "cosa"}]},
+}
+
+
+class FakeForge:
+    """Fragua de mentira: ni cliente ni red, y apunta lo que le piden."""
+
+    def __init__(self, blueprint=None, fail_build=False):
+        self.blueprint = blueprint if blueprint is not None else FORGED
+        self.fail_build = fail_build
+        self.proposals = 0
+        self.hints: list[str] = []
+        self.avoided: list[tuple[str, ...]] = []
+        self.built: list[str] = []
+
+    def propose(self, count=3, hint="", party_size=1, avoid=()):
+        self.proposals += 1
+        self.hints.append(hint)
+        self.avoided.append(tuple(avoid))
+        return [Pitch(f"idea-{self.proposals}-{number}", f"Aventura {self.proposals}.{number}",
+                      f"Gancho {number}.", "Se abre una puerta.")
+                for number in range(1, count + 1)]
+
+    def build(self, pitch, hint="", party_size=1):
+        self.built.append(pitch.id)
+        if self.fail_build:
+            raise DungeonMasterError("la API esta de morros")
+        return dict(self.blueprint, name=pitch.name)
+
+
+def menu(script, forge=None):
+    """El menu de los tests nunca construye una fragua de verdad."""
+    return SetupMenu(io.StringIO(script), io.StringIO(), forge=forge or FakeForge())
 
 
 def test_the_menu_builds_the_campaign_it_was_told():
-    #      escenario, cuantos, nombre1, arq1, nombre2, arq2, tono, dificultad,
-    #      premisa, ia, titulo, confirmar
-    flow = menu("2\n2\nAldric\n1\nNel\n3\noscuro\n3\nBuscamos a mi hermana.\n"
+    #      cuantos, nombre1, arq1, nombre2, arq2, invento=no, escenario, tono,
+    #      dificultad, premisa, ia, titulo, confirmar
+    flow = menu("2\nAldric\n1\nNel\n3\nno\n2\noscuro\n3\nBuscamos a mi hermana.\n"
                 "no\nLa cripta callada\nsi\n")
 
     engine, first = flow.new_campaign()
@@ -306,11 +359,15 @@ def test_the_menu_builds_the_campaign_it_was_told():
     assert engine.world.get_character("hero-nel").spells
 
 
-def test_empty_answers_take_the_defaults():
-    engine, first = menu("\n\n\n\n\n\n\n\n\nsi\n").new_campaign()
+def test_empty_answers_invent_an_adventure_and_take_the_rest_of_the_defaults():
+    """Por defecto se juega algo inventado: es lo primero que ofrece el menu."""
+    forge = FakeForge()
+    engine, first = menu("\n" * 11 + "si\n", forge).new_campaign()
 
     setup = setup_of(engine)
-    assert setup.scenario == "taberna"
+    assert setup.is_forged
+    assert setup.scenario == "idea-1-1"      # la primera propuesta
+    assert forge.built == ["idea-1-1"]       # y solo se monta la elegida
     assert setup.tone == "heroico"
     assert setup.difficulty == "normal"
     assert setup.premise == ""
@@ -318,8 +375,16 @@ def test_empty_answers_take_the_defaults():
     assert first == "hero-heroe-1"
 
 
+def test_the_prepared_catalog_is_one_no_away():
+    engine, _ = menu("\n\n\nno\n\n\n\n\n\n\nsi\n").new_campaign()
+
+    setup = setup_of(engine)
+    assert setup.is_forged is False
+    assert setup.scenario == "taberna"
+
+
 def test_options_can_be_answered_by_name():
-    flow = menu("torre\n1\nNel\nmago\nhumor\nfacil\n-\nno\n\nsi\n")
+    flow = menu("1\nNel\nmago\nno\ntorre\nhumor\nfacil\n-\nno\n\nsi\n")
 
     setup = setup_of(flow.new_campaign()[0])
 
@@ -330,7 +395,7 @@ def test_options_can_be_answered_by_name():
 
 
 def test_bad_answers_are_asked_again():
-    flow = menu("99\nluna\n2\n0\n7\n1\nAldric\n1\n1\n2\n-\nno\n\nsi\n")
+    flow = menu("0\n7\n1\nAldric\n1\nno\n99\nluna\n2\n1\n2\n-\nno\n\nsi\n")
 
     setup = setup_of(flow.new_campaign()[0])
 
@@ -342,7 +407,7 @@ def test_bad_answers_are_asked_again():
 
 
 def test_duplicate_names_are_refused():
-    flow = menu("1\n2\nAldric\n1\nAldric\nNel\n1\n1\n2\n-\nno\n\nsi\n")
+    flow = menu("2\nAldric\n1\nAldric\nNel\n1\nno\n1\n1\n2\n-\nno\n\nsi\n")
 
     setup = setup_of(flow.new_campaign()[0])
 
@@ -352,11 +417,91 @@ def test_duplicate_names_are_refused():
 
 def test_the_summary_can_be_amended_before_starting():
     #                             ... confirmar=no, cambio=tono, tono=crudo, confirmar=si
-    flow = menu("1\n1\nAldric\n1\n1\n2\n-\nno\n\nno\ntono\n5\nsi\n")
+    flow = menu("1\nAldric\n1\nno\n1\n1\n2\n-\nno\n\nno\ntono\n5\nsi\n")
 
     setup = setup_of(flow.new_campaign()[0])
 
     assert setup.tone == "crudo"
+
+
+# -- aventuras inventadas -----------------------------------------------------
+
+
+def test_the_ai_invents_several_adventures_and_only_builds_the_chosen_one():
+    #     cuantos, nombre, arq, invento=si, de que va, cual=2, tono, dif,
+    #     premisa, ia, titulo, confirmar
+    forge = FakeForge()
+    flow = menu("1\nNel\nmago\nsi\nalgo con agua\n2\n1\n2\n-\nno\n\nsi\n", forge)
+
+    engine, first = flow.new_campaign()
+
+    setup = setup_of(engine)
+    assert setup.is_forged
+    assert setup.scenario == "idea-1-2"
+    assert forge.hints == ["algo con agua"]
+    assert forge.built == ["idea-1-2"]        # las otras dos no se montan
+    # Y la aventura inventada se juega como cualquier otra.
+    assert engine.world.location_of(first).id == "brocal"
+    assert engine.world.get_character("cosa").position == (4, 4)
+    assert "Callar el pozo" in {one.name for one in engine.quests.quests.values()}
+
+
+def test_asking_for_others_proposes_again_without_repeating():
+    forge = FakeForge()
+    #     ..., invento=si, hint, cual=otras, cual=1, ...
+    flow = menu("1\nNel\nmago\nsi\n-\notras\n1\n1\n2\n-\nno\n\nsi\n", forge)
+
+    setup = setup_of(flow.new_campaign()[0])
+
+    assert forge.proposals == 2
+    assert forge.avoided[0] == ()
+    assert forge.avoided[1] == ("Aventura 1.1", "Aventura 1.2", "Aventura 1.3")
+    assert setup.scenario == "idea-2-1"
+
+
+def test_the_prepared_scenarios_are_always_one_answer_away():
+    flow = menu("1\nNel\nmago\nsi\n-\npreparadas\n2\n1\n2\n-\nno\n\nsi\n")
+
+    setup = setup_of(flow.new_campaign()[0])
+
+    assert setup.is_forged is False
+    assert setup.scenario == "cripta"
+
+
+def test_if_the_adventure_cannot_be_built_the_menu_offers_the_rest():
+    forge = FakeForge(fail_build=True)
+    flow = menu("1\nNel\nmago\nsi\n-\n1\npreparadas\n1\n1\n2\n-\nno\n\nsi\n", forge)
+
+    setup = setup_of(flow.new_campaign()[0])
+
+    assert "No he conseguido montarla" in flow.stream_out.getvalue()
+    assert setup.scenario == "taberna"
+
+
+def test_without_ai_the_menu_falls_back_to_the_catalog():
+    class NoForge(FakeForge):
+        def propose(self, *arguments, **keywords):
+            raise DungeonMasterError("no hay credencial")
+
+    flow = menu("1\nNel\nmago\nsi\n-\n1\n1\n2\n-\nno\n\nsi\n", NoForge())
+
+    setup = setup_of(flow.new_campaign()[0])
+
+    assert "No he podido inventarlas" in flow.stream_out.getvalue()
+    assert setup.scenario == "taberna"
+
+
+def test_a_forged_campaign_survives_save_and_load(tmp_path):
+    forge = FakeForge()
+    engine, _ = menu("1\nNel\nmago\nsi\n-\n1\n1\n2\n-\nno\n\nsi\n", forge).new_campaign()
+    path = tmp_path / "inventada.json"
+
+    save_game(engine, path)
+    setup = setup_of(load_game(path))
+
+    assert setup.is_forged
+    assert setup.blueprint["start"] == "brocal"
+    assert setup.campaign_title == "Aventura 1.1"
 
 
 def test_saying_salir_cancels_the_preparation():

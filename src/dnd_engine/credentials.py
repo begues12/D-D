@@ -1,4 +1,9 @@
-"""Almacenamiento local de credenciales usando Windows DPAPI."""
+"""Almacenamiento local de credenciales usando Windows DPAPI.
+
+Una clave por proveedor de IA, cifrada con la cuenta de Windows del usuario:
+asi se puede tener la de una casa y la de otra a la vez y cambiar sin volver a
+escribirlas. Nunca va al repositorio ni a la partida guardada.
+"""
 
 from __future__ import annotations
 
@@ -8,14 +13,16 @@ import sys
 from ctypes import wintypes
 from pathlib import Path
 
+from .providers import DEFAULT_PROVIDER
+
 
 class _DataBlob(ctypes.Structure):
     _fields_ = [("cbData", wintypes.DWORD), ("pbData", ctypes.POINTER(ctypes.c_byte))]
 
 
-def _storage_path() -> Path:
+def _storage_path(provider: str = DEFAULT_PROVIDER) -> Path:
     root = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
-    return root / "DndEngine" / "anthropic.key"
+    return root / "DndEngine" / f"{provider}.key"
 
 
 def _protect(value: bytes) -> bytes:
@@ -50,21 +57,21 @@ def _unprotect(value: bytes) -> bytes:
         ctypes.windll.kernel32.LocalFree(result.pbData)
 
 
-def save_api_key(api_key: str) -> None:
+def save_api_key(api_key: str, provider: str = DEFAULT_PROVIDER) -> None:
     key = api_key.strip()
     if not key:
         raise ValueError("La clave API no puede estar vacia.")
-    path = _storage_path()
+    path = _storage_path(provider)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(_protect(key.encode("utf-8")))
 
 
-def load_api_key() -> str | None:
-    path = _storage_path()
+def load_api_key(provider: str = DEFAULT_PROVIDER) -> str | None:
+    path = _storage_path(provider)
     if not path.exists():
         return None
     return _unprotect(path.read_bytes()).decode("utf-8")
 
 
-def delete_api_key() -> None:
-    _storage_path().unlink(missing_ok=True)
+def delete_api_key(provider: str = DEFAULT_PROVIDER) -> None:
+    _storage_path(provider).unlink(missing_ok=True)

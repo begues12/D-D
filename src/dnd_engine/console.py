@@ -13,7 +13,8 @@ from typing import Any, Callable, TextIO
 from .actions import ActionResult, Intent, execute
 from .events import Event
 from .game import GameEngine
-from .models import Character, Consumable, Enemy, Weapon
+from .dice import Dice
+from .models import Character, Consumable, Enemy, ItemEffect, Weapon
 from .persistence import load_game, save_game
 from . import tactics
 
@@ -183,6 +184,7 @@ class Console:
             ("fincombate", "endfight"): self.end_encounter,
             ("curar", "heal"): self.heal,
             ("salvacion", "save"): self.saving_throw,
+            ("tirar", "dados", "roll"): self.roll_dice,
             ("misiones", "quests"): self.quests,
             ("eventos", "log"): self.events,
             ("memoria", "memory"): self.show_memory,
@@ -221,6 +223,7 @@ class Console:
             "fincombate                terminar el encuentro",
             "curar OBJETIVO N          curar puntos de golpe",
             "salvacion HABILIDAD CD    tirar una salvacion",
+            "tirar 2d6+3               una tirada de dados suelta",
             "misiones                  estado de las misiones",
             "eventos [n]               ultimos eventos del bus",
             "memoria                   hechos y cronica de la campana",
@@ -315,9 +318,10 @@ class Console:
         character = self.engine.world.get_character(arguments[0] if arguments else self.actor_id)
         for item in character.inventory:
             if isinstance(item, Weapon):
-                extra = f" (d{item.damage_die}+{item.damage_bonus}, alcance {item.reach})"
+                extra = f" ({item.damage}, alcance {item.reach})"
             elif isinstance(item, Consumable):
-                extra = f" ({item.effect.value}, {item.uses} usos)"
+                healing = f" {item.healing}" if item.effect is ItemEffect.HEAL else ""
+                extra = f" ({item.effect.value}{healing}, {item.uses} usos)"
             else:
                 extra = ""
             self.say(f"  - {item.name} [{item.id}]{extra}")
@@ -388,6 +392,13 @@ class Console:
 
     def saving_throw(self, arguments: list[str]) -> None:
         self._run_intent("saving_throw", ability=arguments[0], dc=arguments[1])
+
+    def roll_dice(self, arguments: list[str]) -> None:
+        """Una tirada suelta, con el mismo lanzador que usa el motor."""
+        if not arguments:
+            raise ValueError("Escribe una tirada, por ejemplo: tirar 2d6+3")
+        dice = Dice.parse("".join(arguments))
+        self.say(f"  {dice.roll(self.engine.combat.roller).detail}")
 
     # -- combate ----------------------------------------------------------
 

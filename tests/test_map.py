@@ -15,7 +15,7 @@ def make_dungeon(rolls=None, blocked=()):
     engine = GameEngine(world, roller=lambda _low, _high: (rolls or []).pop(0))
 
     hero = Character("hero", "Hero", max_hp=20, armor_class=12, abilities=AbilityScores(strength=16))
-    hero.add_item(Weapon("sword", "Espada", damage_die=8, damage_bonus=2, attack_bonus=3))
+    hero.add_item(Weapon("sword", "Espada", damage="1d8+2", attack_bonus=3))
     engine.add_character(hero)
     engine.place("hero", "hall", (0, 0))
 
@@ -232,7 +232,7 @@ def test_attacking_someone_in_another_location_is_rejected():
 def test_spell_range_is_checked_against_the_map():
     engine = make_dungeon(rolls=[5, 6])
     hero = engine.world.get_character("hero")
-    hero.spells.append(Spell("bolt", "Rayo", damage_die=8, save_dc=15, range_feet=10))
+    hero.spells.append(Spell("bolt", "Rayo", damage="1d8", save_dc=15, range_feet=10))
     hero.spell_slots[1] = 2
 
     with pytest.raises(ValueError, match="alcance"):

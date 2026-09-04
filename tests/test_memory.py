@@ -19,7 +19,7 @@ def make_game():
 
     hero = Character("hero", "Aldric", max_hp=20, armor_class=12,
                      abilities=AbilityScores(strength=16))
-    hero.add_item(Weapon("sword", "Espada", damage_die=8, damage_bonus=2, attack_bonus=3))
+    hero.add_item(Weapon("sword", "Espada", damage="1d8+2", attack_bonus=3))
     hero.add_item(Item("key", "Llave"))
     engine.add_character(hero)
     engine.place("hero", "hall", (3, 4))

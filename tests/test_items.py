@@ -1,4 +1,5 @@
 import io
+import json
 
 import pytest
 
@@ -26,7 +27,7 @@ def make_game():
                         locked=True, key_id="key"))
     engine = GameEngine(world, roller=lambda _low, high: min(high, 15))
     hero = Character("hero", "Aldric", max_hp=20, armor_class=12)
-    hero.add_item(Weapon("sword", "Espada", damage_die=8))
+    hero.add_item(Weapon("sword", "Espada", damage="1d8"))
     engine.add_character(hero)
     engine.place("hero", "hall", (0, 0))
     return engine
@@ -221,7 +222,7 @@ def test_the_console_enforces_the_economy_once_combat_starts():
 
 
 def potion(item_id="potion", **overrides):
-    values = {"effect": ItemEffect.HEAL, "dice": 8, "bonus": 2}
+    values = {"effect": ItemEffect.HEAL, "healing": "1d8+2"}
     values.update(overrides)
     return Consumable(item_id, "Pocion de curacion", **values)
 
@@ -351,7 +352,7 @@ def test_ordinary_items_are_not_usable():
 def test_an_antidote_removes_the_condition_it_cures():
     engine = wounded_game()
     hero = engine.world.get_character("hero")
-    hero.add_item(potion("antidote", effect=ItemEffect.CURE, dice=0, bonus=0,
+    hero.add_item(potion("antidote", effect=ItemEffect.CURE, healing="0",
                          condition=Condition.POISONED))
     hero.conditions.add(Condition.POISONED)
     hero.condition_durations[Condition.POISONED] = 3
@@ -367,7 +368,7 @@ def test_an_antidote_removes_the_condition_it_cures():
 def test_an_antidote_is_not_wasted_on_someone_who_is_fine():
     engine = wounded_game()
     hero = engine.world.get_character("hero")
-    hero.add_item(potion("antidote", effect=ItemEffect.CURE, dice=0, bonus=0,
+    hero.add_item(potion("antidote", effect=ItemEffect.CURE, healing="0",
                          condition=Condition.POISONED))
 
     with pytest.raises(ValueError, match="no sufre el estado"):
@@ -380,7 +381,7 @@ def test_an_antidote_is_not_wasted_on_someone_who_is_fine():
 def test_consumables_survive_save_and_load(tmp_path):
     engine = wounded_game()
     engine.world.get_character("hero").add_item(
-        potion("balm", uses=2, effect=ItemEffect.CURE, dice=0,
+        potion("balm", uses=2, effect=ItemEffect.CURE, healing="0",
                condition=Condition.BLINDED))
     path = tmp_path / "campana.json"
 
@@ -401,7 +402,44 @@ def test_using_a_potion_from_the_console():
     console.handle("inventario")
 
     text = console.stream_out.getvalue()
-    assert "usa Pocion de curacion: recupera 10 puntos de golpe. (se agota)" in text
+    assert ("usa Pocion de curacion: recupera 10 puntos de golpe "
+            "[1d8+2 [8]+2 = 10]. (se agota)") in text
     assert "Espada [sword]" in text  # el inventario se pinta
     assert "potion" not in {
         one.id for one in engine.world.get_character("hero").inventory}
+
+
+def test_dice_survive_save_and_load(tmp_path):
+    engine = wounded_game()
+    engine.world.get_character("hero").add_item(
+        Weapon("greatsword", "Mandoble", damage="2d6+3"))
+    path = tmp_path / "campana.json"
+
+    save_game(engine, path)
+    loaded = load_game(path).world.get_character("hero")
+
+    assert str(loaded.get_item("greatsword").damage) == "2d6+3"
+    assert str(loaded.get_item("potion").healing) == "1d8+2"
+
+
+def test_an_old_save_without_dice_notation_still_loads(tmp_path):
+    """Las partidas guardadas antes del sistema de dados traian `damage_die`."""
+    engine = wounded_game()
+    path = tmp_path / "campana.json"
+    save_game(engine, path)
+
+    data = json.loads(path.read_text(encoding="utf-8"))
+    for character in data["world"]["characters"]:
+        for item in character["inventory"]:
+            if item["kind"] == "weapon":
+                item.pop("damage")
+                item["damage_die"], item["damage_bonus"] = 6, 1
+            if item["kind"] == "consumable":
+                item.pop("healing")
+                item["dice"], item["bonus"] = 4, 2
+    path.write_text(json.dumps(data), encoding="utf-8")
+
+    hero = load_game(path).world.get_character("hero")
+
+    assert str(hero.get_item("sword").damage) == "1d6+1"
+    assert str(hero.get_item("potion").healing) == "1d4+2"

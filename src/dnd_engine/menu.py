@@ -3,6 +3,10 @@
 No es una pantalla de opciones, es una conversacion guiada. Todo lo que dice
 sale por `say()` y todo lo que oye entra por `ask()`, asi que ponerle voz mas
 adelante es sustituir esos dos metodos, no reescribir el flujo.
+
+La historia puede salir de dos sitios: del catalogo escrito a mano o de la
+fragua (`forge.py`), que le pide varias aventuras nuevas al modelo y monta solo
+la que el grupo elija. Si no hay IA a mano, el catalogo sigue estando.
 """
 
 from __future__ import annotations
@@ -10,6 +14,7 @@ from __future__ import annotations
 import sys
 from typing import Any, Callable, TextIO
 
+from .ai_dm import DungeonMasterError
 from .campaign import (
     ARCHETYPES,
     DIFFICULTIES,
@@ -20,6 +25,8 @@ from .campaign import (
     PlayerSetup,
     build_campaign,
 )
+from .forge import DEFAULT_PROPOSALS, ScenarioForge
+from .providers import get_provider
 from .game import GameEngine
 from .persistence import load_game
 
@@ -29,9 +36,14 @@ class Cancelled(Exception):
 
 
 class SetupMenu:
-    def __init__(self, stream_in: TextIO | None = None, stream_out: TextIO | None = None) -> None:
+    def __init__(self, stream_in: TextIO | None = None, stream_out: TextIO | None = None,
+                 forge: Any = None) -> None:
         self.stream_in = stream_in or sys.stdin
         self.stream_out = stream_out or sys.stdout
+        # La fragua se crea la primera vez que hace falta -crearla abre cliente
+        # y credencial-, o se inyecta ya hecha desde los tests.
+        self._forge = forge
+        self._forge_tried = forge is not None
 
     # -- voz y oido --------------------------------------------------------
 
@@ -143,8 +155,8 @@ class SetupMenu:
         self.say("Muy bien. Antes de empezar necesito saber que historia quereis jugar.")
         self.say("Responde con el numero, o escribe 'salir' para dejarlo.")
 
-        setup.scenario = self.ask_scenario()
         setup.players = self.ask_party()
+        self.ask_scenario(setup)
         setup.tone = self.ask_tone()
         setup.difficulty = self.ask_difficulty()
         setup.premise = self.ask_premise()
@@ -165,7 +177,20 @@ class SetupMenu:
         self.say(f"Empieza '{setup.campaign_title}'.")
         return engine, setup.players[0].id
 
-    def ask_scenario(self) -> str:
+    # -- la historia -------------------------------------------------------
+
+    def ask_scenario(self, setup: CampaignSetup) -> None:
+        """Deja en `setup` la historia elegida: inventada por la IA o del catalogo."""
+        self.say()
+        self.say("Puedo inventarme aventuras nuevas para vosotros, o jugar una de "
+                 "las que tengo escritas.")
+        if self.ask_yes_no("Me las invento?", True) and self.forge_adventure(setup):
+            return
+        self.say("Nos quedamos con las escritas.")
+        setup.blueprint = None
+        setup.scenario = self.ask_prepared_scenario()
+
+    def ask_prepared_scenario(self) -> str:
         self.say()
         self.say("Estas son las historias que tengo preparadas:")
         return self.choose(
@@ -173,6 +198,81 @@ class SetupMenu:
             [(one, data["name"], data["description"]) for one, data in SCENARIOS.items()],
             "taberna",
         )
+
+    def forge(self) -> Any:
+        """La fragua, creada al primer uso. `None` si no hay IA disponible."""
+        if not self._forge_tried:
+            self._forge_tried = True
+            try:
+                self._forge = ScenarioForge()
+            except DungeonMasterError as error:
+                self.say(f"No puedo inventar aventuras ahora mismo: {error}")
+                self._forge = None
+        return self._forge
+
+    def forge_adventure(self, setup: CampaignSetup) -> bool:
+        """Propone aventuras hasta que una guste, y monta esa. False si no sale.
+
+        Proponer es barato y montar no, asi que solo se construye la elegida.
+        """
+        forge = self.forge()
+        if forge is None:
+            return False
+        hint = self.ask_hint()
+        seen: list[str] = []
+        while True:
+            self.say()
+            self.say(f"Dame un momento, estoy pensando {DEFAULT_PROPOSALS} aventuras...")
+            try:
+                pitches = forge.propose(
+                    DEFAULT_PROPOSALS, hint, setup.party_size, tuple(seen))
+            except DungeonMasterError as error:
+                self.say(f"No he podido inventarlas: {error}")
+                return False
+            seen.extend(one.name for one in pitches)
+
+            while True:
+                self.say()
+                options = [(one.id, one.name, one.description) for one in pitches]
+                options.append(("otras", "Ninguna de estas",
+                                "Que me invente otras distintas."))
+                options.append(("preparadas", "Las que ya tengo escritas",
+                                "Volver al catalogo de siempre."))
+                choice = self.choose("Cual montamos?", options, pitches[0].id)
+                if choice == "preparadas":
+                    return False
+                if choice == "otras":
+                    break
+                pitch = next(one for one in pitches if one.id == choice)
+                if self.build_adventure(setup, forge, pitch, hint):
+                    return True
+
+    def build_adventure(self, setup: CampaignSetup, forge: Any, pitch: Any,
+                        hint: str) -> bool:
+        self.say()
+        if pitch.intro:
+            self.say(pitch.intro)
+            self.say()
+        self.say(f"Montando '{pitch.name}'. Esto tarda un poco mas.")
+        try:
+            blueprint = forge.build(pitch, hint, setup.party_size)
+        except DungeonMasterError as error:
+            self.say(f"No he conseguido montarla: {error}")
+            self.say("Elige otra.")
+            return False
+        setup.blueprint = blueprint
+        setup.scenario = pitch.id
+        rooms = len(blueprint["locations"])
+        enemies = len(blueprint.get("enemies", []))
+        self.say(f"Lista: '{blueprint['name']}', {rooms} lugares y "
+                 f"{enemies} enemigo{'s' if enemies != 1 else ''}.")
+        return True
+
+    def ask_hint(self) -> str:
+        self.say()
+        self.say("De que quereis que vaya? Un lugar, un monstruo, una idea suelta.")
+        answer = self.ask("Cuentamelo, o dale a intro para que elija yo.", "-")
+        return "" if answer.strip() in ("-", "") else answer.strip()
 
     def ask_party(self) -> list[PlayerSetup]:
         self.say()
@@ -228,13 +328,14 @@ class SetupMenu:
     def ask_ai_dm(self) -> bool:
         self.say()
         self.say("Puedo narrar con un DM de IA, que interpreta lo que escribis en "
-                 "lenguaje natural. Necesita ANTHROPIC_API_KEY; sin ella se juega "
-                 "igual con los comandos de siempre.")
+                 f"lenguaje natural. Necesita la clave de {get_provider().name} "
+                 f"({get_provider().env_var}); sin ella se juega igual con los "
+                 "comandos de siempre.")
         return self.ask_yes_no("Activo el DM con IA?", False)
 
     def ask_title(self, setup: CampaignSetup) -> str:
         self.say()
-        default = SCENARIOS[setup.scenario]["name"]
+        default = setup.scenario_blueprint["name"]
         answer = self.ask("Como quereis llamar a la campana?", default)
         return "" if answer == default else answer
 
@@ -242,7 +343,7 @@ class SetupMenu:
         field = self.choose(
             "Que cambio?",
             [
-                ("escenario", "El escenario", "Otra historia distinta."),
+                ("escenario", "El escenario", "Otra historia distinta, inventada o del catalogo."),
                 ("grupo", "El grupo", "Numero de jugadores, nombres y arquetipos."),
                 ("tono", "El tono", "Como se narra."),
                 ("dificultad", "La dificultad", "Cuanto aprietan los enemigos."),
@@ -253,7 +354,7 @@ class SetupMenu:
             "grupo",
         )
         actions: dict[str, Callable[[], Any]] = {
-            "escenario": lambda: setattr(setup, "scenario", self.ask_scenario()),
+            "escenario": lambda: self.ask_scenario(setup),
             "grupo": lambda: setattr(setup, "players", self.ask_party()),
             "tono": lambda: setattr(setup, "tone", self.ask_tone()),
             "dificultad": lambda: setattr(setup, "difficulty", self.ask_difficulty()),

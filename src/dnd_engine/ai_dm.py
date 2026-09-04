@@ -17,8 +17,8 @@ En la segunda llamada recibe los resultados reales y los eventos, y solo pone la
 palabras. Si esa llamada falla, el turno ya esta ejecutado, asi que se narra en
 seco con los resumenes del motor en vez de perder lo ocurrido.
 
-Requiere el SDK oficial:  pip install "dnd-engine[ai]"
-y una credencial: ANTHROPIC_API_KEY, o `ant auth login`.
+Requiere el SDK de la IA que se use y su credencial; de eso se encarga
+`providers.py`, que es el unico modulo que sabe de casas concretas.
 """
 
 from __future__ import annotations
@@ -31,17 +31,12 @@ from .events import Event
 from .game import GameEngine
 from .map import distance_in_feet
 from .models import Consumable, Weapon
+from .providers import DEFAULT_RETRIES, ProviderError, Reply, get_provider
 
-MODEL = "claude-opus-5"
 MAX_TOKENS = 16000
 NO_ACTION = "no_action"
 # Tope de acciones por frase: una secuencia razonable de turno, no un guion.
 MAX_INTENTS = 3
-# La API se sobrecarga (429/529) y perder un turno por eso es inaceptable, asi
-# que se reintenta mas que el valor por defecto del SDK.
-DEFAULT_RETRIES = 5
-OVERLOADED_STATUS = frozenset({429, 500, 502, 503, 504, 529})
-
 _JSON_TYPES = {"str": "string", "int": "integer"}
 
 
@@ -197,11 +192,12 @@ def describe_state(engine: GameEngine, actor_id: str) -> str:
 
     weapons = [item for item in actor.inventory if isinstance(item, Weapon)]
     lines.append("ARMAS: " + (", ".join(
-        f"{weapon.id} \"{weapon.name}\" (d{weapon.damage_die}+{weapon.damage_bonus}, "
+        f"{weapon.id} \"{weapon.name}\" ({weapon.damage} de dano, "
         f"alcance {weapon.reach})" for weapon in weapons) or "ninguna"))
     lines.append("HECHIZOS: " + (", ".join(
         f"{spell.id} \"{spell.name}\" (nivel {spell.level}, "
-        f"{actor.spell_slots.get(spell.level, 0)} espacios, alcance {spell.range_feet})"
+        + (f"{spell.damage} de dano, " if spell.damage is not None else "")
+        + f"{actor.spell_slots.get(spell.level, 0)} espacios, alcance {spell.range_feet})"
         for spell in actor.spells) or "ninguno"))
     others = [item for item in actor.inventory if not isinstance(item, Weapon)]
     lines.append("OBJETOS: " + (", ".join(
@@ -277,24 +273,64 @@ def describe_events(events) -> str:
     ) or "  (ninguno)"
 
 
-class DungeonMaster:
-    """Interprete y narrador. El motor sigue siendo la autoridad sobre las reglas."""
+class ModelSession:
+    """Transporte comun con el modelo, sea de la casa que sea.
+
+    No sabe de ningun SDK: pide el cliente, la peticion y la traduccion de
+    errores a un `Provider` (`providers.py`). Lo heredan el DM y la fragua de
+    aventuras, que hablan con la misma IA para cosas distintas.
+    """
 
     def __init__(
         self,
         client: Any = None,
-        model: str = MODEL,
+        model: str | None = None,
         effort: str = "low",
         max_tokens: int = MAX_TOKENS,
         story: str = "",
+        provider: Any = None,
     ) -> None:
-        self.client = client if client is not None else _default_client()
+        self.provider = get_provider(provider)
+        try:
+            self.client = client if client is not None else self.provider.create_client()
+        except ProviderError as error:
+            raise DungeonMasterError(str(error)) from error
         # La historia configurada no cambia en toda la campana, asi que va en el
         # prompt de sistema y sigue entrando en la cache.
         self.story = story
-        self.model = model
+        self.model = model or self.provider.default_model
         self.effort = effort
         self.max_tokens = max_tokens
+
+    def _system(self, base: str) -> list[dict[str, Any]]:
+        return [{"type": "text", "text": base + self.story,
+                 "cache_control": {"type": "ephemeral"}}]
+
+    # -- transporte --------------------------------------------------------
+
+    def _call(self, **parameters: Any) -> Reply:
+        try:
+            reply = self.provider.create_message(
+                self.client, model=self.model, max_tokens=self.max_tokens,
+                effort=self.effort, **parameters,
+            )
+        except Exception as error:
+            translated = self.provider.translate(error)
+            if translated is None:
+                raise
+            message, retryable = translated
+            raise DungeonMasterError(message, retryable) from error
+
+        if reply.stop_reason == "refusal":
+            raise DungeonMasterError("El modelo declino responder a esta peticion.")
+        return reply
+
+
+class DungeonMaster(ModelSession):
+    """Interprete y narrador. El motor sigue siendo la autoridad sobre las reglas."""
+
+    def __init__(self, *arguments: Any, **keywords: Any) -> None:
+        super().__init__(*arguments, **keywords)
         self.tools = build_tools()
 
     # -- ciclo completo ---------------------------------------------------
@@ -352,7 +388,7 @@ class DungeonMaster:
                        f"{briefing(engine, actor_id, intro='')}\n\n"
                        f"Estado inicial:\n{describe_state(engine, actor_id)}"}],
         )
-        return "".join(one.text for one in response.content if one.type == "text").strip()
+        return response.text
 
     # -- fase 1: interpretar ----------------------------------------------
 
@@ -372,7 +408,7 @@ class DungeonMaster:
                        f"Estado de la partida:\n{describe_state(engine, actor_id)}\n\n"
                        f"El jugador dice: {message}"}],
         )
-        blocks = [one for one in response.content if one.type == "tool_use"]
+        blocks = response.tool_uses()
         if not blocks:
             raise DungeonMasterError(
                 "El modelo no eligio ninguna accion "
@@ -420,76 +456,4 @@ class DungeonMaster:
                        f"Eventos publicados por el motor:\n{describe_events(events)}\n\n"
                        f"Estado tras la accion:\n{describe_state(engine, actor_id)}"}],
         )
-        return "".join(one.text for one in response.content if one.type == "text").strip()
-
-    def _system(self, base: str) -> list[dict[str, Any]]:
-        return [{"type": "text", "text": base + self.story,
-                 "cache_control": {"type": "ephemeral"}}]
-
-    # -- transporte --------------------------------------------------------
-
-    def _call(self, **parameters: Any):
-        try:
-            response = self.client.messages.create(
-                model=self.model,
-                max_tokens=self.max_tokens,
-                output_config={"effort": self.effort},
-                **parameters,
-            )
-        except Exception as error:
-            translated = self._translate(error)
-            if translated is None:
-                raise
-            raise translated from error
-
-        if getattr(response, "stop_reason", None) == "refusal":
-            raise DungeonMasterError("El modelo declino responder a esta peticion.")
-        return response
-
-    def _translate(self, error: Exception) -> DungeonMasterError | None:
-        """Traduce los errores del SDK; devuelve None si el error no es suyo."""
-        # Sin credencial el SDK falla al construir la peticion con un TypeError,
-        # no con AuthenticationError, y sin esto la consola se caia entera.
-        if isinstance(error, TypeError) and "authentication" in str(error).lower():
-            return DungeonMasterError(
-                "No hay credencial de Anthropic: define ANTHROPIC_API_KEY "
-                "o ejecuta 'ant auth login'."
-            )
-        anthropic = _anthropic_module()
-        if anthropic is None:
-            return None
-        if isinstance(error, anthropic.AuthenticationError):
-            return DungeonMasterError(
-                "Credencial de Anthropic invalida o ausente: define ANTHROPIC_API_KEY."
-            )
-        if isinstance(error, anthropic.NotFoundError):
-            return DungeonMasterError(f"Modelo '{self.model}' no encontrado.")
-        if isinstance(error, anthropic.APIStatusError):
-            if error.status_code in OVERLOADED_STATUS:
-                return DungeonMasterError(
-                    f"La API esta sobrecargada ({error.status_code}) y no ha cedido "
-                    "tras varios reintentos.",
-                    retryable=True,
-                )
-            return DungeonMasterError(f"La API respondio {error.status_code}: {error.message}")
-        if isinstance(error, anthropic.APIConnectionError):
-            return DungeonMasterError(
-                "No se pudo conectar con la API de Anthropic.", retryable=True)
-        return None
-
-
-def _anthropic_module():
-    try:
-        import anthropic
-    except ImportError:
-        return None
-    return anthropic
-
-
-def _default_client():
-    anthropic = _anthropic_module()
-    if anthropic is None:
-        raise DungeonMasterError(
-            'El DM con IA necesita el SDK oficial: pip install "dnd-engine[ai]"'
-        )
-    return anthropic.Anthropic(max_retries=DEFAULT_RETRIES)
+        return response.text

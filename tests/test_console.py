@@ -23,13 +23,13 @@ def make_game(rolls=None):
 
     hero = Character("hero", "Hero", max_hp=20, armor_class=12,
                      abilities=AbilityScores(strength=16))
-    hero.add_item(Weapon("sword", "Espada", damage_die=8, damage_bonus=2, attack_bonus=3))
+    hero.add_item(Weapon("sword", "Espada", damage="1d8+2", attack_bonus=3))
     hero.add_item(Item("key", "Llave"))
     engine.add_character(hero)
     engine.place("hero", "hall", (0, 0))
 
     goblin = Enemy("goblin", "Goblin", max_hp=8, armor_class=10, experience_reward=50)
-    goblin.add_item(Weapon("dagger", "Daga", damage_die=4, damage_bonus=1, attack_bonus=3))
+    goblin.add_item(Weapon("dagger", "Daga", damage="1d4+1", attack_bonus=3))
     engine.add_character(goblin)
     engine.place("goblin", "hall", (4, 4))
     return engine
@@ -296,3 +296,40 @@ def test_tactic_targets_the_other_side_only():
     assert tactics.is_hostile(goblin, hero) is True
     assert tactics.is_hostile(hero, goblin) is True
     assert tactics.is_hostile(hero, hero) is False
+
+
+def test_the_dice_command_rolls_with_the_engine_roller():
+    console = make_console([5, 2])
+
+    console.handle("tirar 2d6+3")
+
+    assert "2d6+3 [5,2]+3 = 10" in output(console)
+
+
+def test_the_dice_command_accepts_spaces_and_rejects_nonsense():
+    console = make_console([4])
+
+    console.handle("tirar 1d6 + 2")
+
+    assert "1d6+2 [4]+2 = 6" in output(console)
+    with pytest.raises(ValueError):
+        console.roll_dice(["espada"])
+    with pytest.raises(ValueError):
+        console.roll_dice([])
+
+
+def test_an_attack_shows_the_damage_breakdown():
+    console = make_console([15, 6])
+    console.handle("acercarse goblin")
+
+    console.handle("atacar goblin")
+
+    assert "dano 1d8+2 [6]+2 = 8" in output(console)
+
+
+def test_the_inventory_shows_the_weapon_notation():
+    console = make_console()
+
+    console.handle("inventario")
+
+    assert "Espada [sword] (1d8+2, alcance 5)" in output(console)

@@ -23,7 +23,7 @@ def make_game(rolls):
     world.add_location(Location("room", "Test Room"))
     engine = GameEngine(world, roller=lambda _low, _high: rolls.pop(0))
     hero = Character("hero", "Hero", max_hp=10, armor_class=12, abilities=AbilityScores(strength=16))
-    hero.add_item(Weapon("sword", "Sword", damage_die=8, damage_bonus=2, attack_bonus=3))
+    hero.add_item(Weapon("sword", "Sword", damage="1d8+2", attack_bonus=3))
     engine.add_character(hero, "room")
     engine.add_enemy(Enemy("enemy", "Enemy", max_hp=10, armor_class=15), "room")
     return engine
@@ -49,13 +49,15 @@ def test_attack_hit_reduces_hp_and_publishes_event():
     assert [event.type for event in engine.events.history] == ["PLAYER_ATTACK"]
 
 
-def test_critical_rolls_damage_twice():
+def test_critical_doubles_the_dice_but_not_the_bonus():
     engine = make_game([20, 4, 6])
 
     result = engine.attack("hero", "enemy", "sword")
 
     assert result.critical is True
-    assert result.damage == 14
+    # 1d8+2 se convierte en 2d8+2: los dados se duplican, el bonus no.
+    assert str(result.damage_roll.dice) == "2d8+2"
+    assert result.damage == 12
     assert engine.world.get_character("enemy").hp == 0
     assert [event.type for event in engine.events.history] == ["PLAYER_ATTACK", "NPC_DIES"]
 
@@ -94,7 +96,7 @@ def test_spell_applies_damage_and_condition_when_save_fails():
     engine = make_game([5, 6])
     hero = engine.world.get_character("hero")
     hero.spells.append(Spell(
-        "frost", "Rayo helado", damage_die=8, saving_ability="dexterity",
+        "frost", "Rayo helado", damage="1d8", saving_ability="dexterity",
         save_dc=15, condition=Condition.STUNNED,
     ))
     hero.spell_slots[1] = 1
@@ -279,7 +281,7 @@ def test_incapacitated_character_automatically_fails_dexterity_saves():
 def test_player_character_is_downed_instead_of_killed():
     engine = make_game([20, 8, 8])
     enemy = engine.world.get_character("enemy")
-    enemy.add_item(Weapon("club", "Club", damage_die=8, damage_bonus=2, attack_bonus=3))
+    enemy.add_item(Weapon("club", "Club", damage="1d8+2", attack_bonus=3))
     hero = engine.world.get_character("hero")
     hero.hp = 3
 
@@ -295,7 +297,7 @@ def test_player_character_is_downed_instead_of_killed():
 def test_damage_to_a_downed_character_adds_death_save_failures():
     engine = make_game([15, 3, 5])
     enemy = engine.world.get_character("enemy")
-    enemy.add_item(Weapon("club", "Club", damage_die=8, damage_bonus=2, attack_bonus=3))
+    enemy.add_item(Weapon("club", "Club", damage="1d8+2", attack_bonus=3))
     hero = down_hero(engine)
 
     result = engine.attack("enemy", "hero", "club")

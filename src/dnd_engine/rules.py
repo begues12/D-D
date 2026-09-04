@@ -3,8 +3,7 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass
 from enum import Enum
-from typing import Callable
-
+from .dice import Dice, DiceRoll, Roller, roll_die
 from .events import Event, EventBus
 from .models import (
     ATTACKER_ADVANTAGE_CONDITIONS,
@@ -21,9 +20,6 @@ from .models import (
 )
 
 
-Roller = Callable[[int, int], int]
-
-
 class Advantage(str, Enum):
     NONE = "none"
     ADVANTAGE = "advantage"
@@ -37,15 +33,6 @@ class Advantage(str, Enum):
         return Advantage.ADVANTAGE if advantage else Advantage.DISADVANTAGE
 
 
-def roll(sides: int, roller: Roller = random.randint) -> int:
-    if sides < 1:
-        raise ValueError("Un dado debe tener al menos una cara.")
-    result = roller(1, sides)
-    if not 1 <= result <= sides:
-        raise ValueError("El lanzador devolvio un resultado fuera del dado.")
-    return result
-
-
 @dataclass(frozen=True)
 class D20Roll:
     natural: int
@@ -55,9 +42,9 @@ class D20Roll:
 
 def roll_d20(roller: Roller = random.randint, advantage: Advantage = Advantage.NONE) -> D20Roll:
     if advantage is Advantage.NONE:
-        rolls = (roll(20, roller),)
+        rolls = (roll_die(20, roller),)
     else:
-        rolls = (roll(20, roller), roll(20, roller))
+        rolls = (roll_die(20, roller), roll_die(20, roller))
     natural = min(rolls) if advantage is Advantage.DISADVANTAGE else max(rolls)
     return D20Roll(natural, rolls, advantage)
 
@@ -81,6 +68,7 @@ class AttackResult:
     target_hp: int
     advantage: Advantage = Advantage.NONE
     rolls: tuple[int, ...] = ()
+    damage_roll: DiceRoll | None = None
 
 
 @dataclass(frozen=True)
@@ -93,6 +81,7 @@ class SpellResult:
     target_hp: int
     condition_applied: Condition | None
     automatic_failure: bool = False
+    damage_roll: DiceRoll | None = None
 
 
 @dataclass(frozen=True)
@@ -117,6 +106,7 @@ class ItemUseResult:
     cured: str | None = None
     uses_left: int = 0
     spent: bool = False
+    healing_roll: DiceRoll | None = None
 
 
 @dataclass(frozen=True)
@@ -155,21 +145,24 @@ class CombatRules:
         critical = d20.natural == 20
         hit = critical or (d20.natural != 1 and total_attack >= target.armor_class)
         damage = 0
+        damage_roll = None
         if hit:
-            damage = roll(weapon.damage_die, self.roller) + weapon.damage_bonus
-            if critical:
-                damage += roll(weapon.damage_die, self.roller) + weapon.damage_bonus
+            # Un critico duplica los dados del arma; el bonus se suma una sola vez.
+            dice = weapon.damage.doubled() if critical else weapon.damage
+            damage_roll = dice.roll(self.roller)
+            damage = max(0, damage_roll.total)
             self._apply_damage(target, damage, critical)
         attacker.resources.action = False
 
         result = AttackResult(
             attacker.id, target.id, d20.natural, total_attack, hit, critical,
-            damage, target.hp, d20.advantage, d20.rolls,
+            damage, target.hp, d20.advantage, d20.rolls, damage_roll,
         )
         self.event_bus.publish(Event(
             "PLAYER_ATTACK", attacker.id, target.id,
             {"natural_roll": d20.natural, "total_attack": total_attack, "hit": hit,
-             "critical": critical, "damage": damage, "advantage": d20.advantage.value},
+             "critical": critical, "damage": damage, "advantage": d20.advantage.value,
+             "damage_roll": damage_roll.detail if damage_roll else None},
         ))
         if hit:
             self._resolve_hp_state(attacker.id, target, damage)
@@ -189,8 +182,10 @@ class CombatRules:
         caster.spell_slots[spell.level] = available_slots - 1
         save = self._resolve_save(target, spell.saving_ability, spell.save_dc)
         damage = 0
-        if spell.damage_die is not None and not save.success:
-            damage = roll(spell.damage_die, self.roller) + spell.damage_bonus
+        damage_roll = None
+        if spell.damage is not None and not save.success:
+            damage_roll = spell.damage.roll(self.roller)
+            damage = max(0, damage_roll.total)
             self._apply_damage(target, damage, critical=False)
         condition_applied = None
         if spell.condition is not None and not save.success:
@@ -202,13 +197,14 @@ class CombatRules:
 
         result = SpellResult(
             caster.id, target.id, save.total, save.success, damage, target.hp,
-            condition_applied, save.automatic_failure,
+            condition_applied, save.automatic_failure, damage_roll,
         )
         self.event_bus.publish(Event(
             "SPELL_CAST", caster.id, target.id,
             {"spell_id": spell.id, "saving_roll": save.total, "saved": save.success,
              "automatic_failure": save.automatic_failure, "damage": damage,
-             "condition": condition_applied.value if condition_applied else None},
+             "condition": condition_applied.value if condition_applied else None,
+             "damage_roll": damage_roll.detail if damage_roll else None},
         ))
         if damage:
             self._resolve_hp_state(caster.id, target, damage)
@@ -238,7 +234,7 @@ class CombatRules:
         if character.is_stable:
             raise ValueError("El personaje ya esta estabilizado.")
 
-        natural = roll(20, self.roller)
+        natural = roll_die(20, self.roller)
         saves = character.death_saves
         revived = False
         if natural == 20:
@@ -294,13 +290,13 @@ class CombatRules:
         if not target.is_alive:
             raise ValueError(f"{target.name} ya no esta activo.")
 
-        healed, cured = 0, None
+        healed, cured, healing_roll = 0, None, None
         if item.effect is ItemEffect.HEAL:
             if target.hp >= target.max_hp:
                 # No gastar el frasco para curar cero.
                 raise ValueError(f"{target.name} ya esta a puntos de golpe completos.")
-            amount = item.bonus + (roll(item.dice, self.roller) if item.dice else 0)
-            healed = self.heal(target, amount)
+            healing_roll = item.healing.roll(self.roller)
+            healed = self.heal(target, max(0, healing_roll.total))
         else:
             if item.condition is None or item.condition not in target.conditions:
                 # Mejor rechazarlo que gastar el antidoto por una mala lectura.
@@ -323,10 +319,11 @@ class CombatRules:
         self.event_bus.publish(Event(
             "ITEM_USED", user.id, target.id,
             {"item_id": item.id, "item_name": item.name, "effect": item.effect.value,
-             "healed": healed, "cured": cured, "uses_left": item.uses},
+             "healed": healed, "cured": cured, "uses_left": item.uses,
+             "healing_roll": healing_roll.detail if healing_roll else None},
         ))
         return ItemUseResult(user.id, target.id, item.id, item.name, item.effect.value,
-                             healed, cured, item.uses, spent)
+                             healed, cured, item.uses, spent, healing_roll)
 
     def heal(self, character: Character, amount: int) -> int:
         if amount < 0:

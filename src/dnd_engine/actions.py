@@ -97,6 +97,8 @@ def _attack(engine: GameEngine, intent: Intent) -> ActionResult:
     detail = f"d20={result.natural_roll} total={result.total_attack}"
     if result.advantage.value != "none":
         detail += f" con {result.advantage.value} {result.rolls}"
+    if result.damage_roll is not None:
+        detail += f" | dano {result.damage_roll.detail}"
     return ActionResult(
         intent, f"{outcome} con {weapon.name}. [{detail}] HP de {target.name}: {result.target_hp}.",
         {"hit": result.hit, "damage": result.damage, "target_hp": result.target_hp},
@@ -115,9 +117,10 @@ def _cast(engine: GameEngine, intent: Intent) -> ActionResult:
     else:
         save = f"falla la salvacion con {result.saving_roll}"
     extra = f" y queda {result.condition_applied.value}" if result.condition_applied else ""
+    detail = f" [dano {result.damage_roll.detail}]" if result.damage_roll is not None else ""
     return ActionResult(
         intent,
-        f"lanza {spell.name} sobre {target.name}: {save}, recibe {result.damage} de dano{extra}. "
+        f"lanza {spell.name} sobre {target.name}: {save}, recibe {result.damage} de dano{extra}.{detail} "
         f"HP de {target.name}: {result.target_hp}.",
         {"saved": result.saved, "damage": result.damage},
     )
@@ -138,7 +141,8 @@ def _use(engine: GameEngine, intent: Intent) -> ActionResult:
         intent.actor_id, intent.parameters["item"], intent.parameters.get("target"))
     who = "" if result.target_id == result.user_id else         f" sobre {engine.world.get_character(result.target_id).name}"
     if result.effect == "heal":
-        outcome = f"recupera {result.healed} puntos de golpe"
+        roll = f" [{result.healing_roll.detail}]" if result.healing_roll is not None else ""
+        outcome = f"recupera {result.healed} puntos de golpe{roll}"
     else:
         outcome = f"se le quita el estado '{result.cured}'"
     left = " (se agota)" if result.spent else f" (le quedan {result.uses_left} usos)"

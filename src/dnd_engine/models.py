@@ -4,7 +4,11 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
+from .dice import Dice
 from .map import Cell, Door, Grid
+
+# Una pocion sin dados: no cura nada por si sola.
+FLAT_ZERO = Dice(0, 0, 0)
 
 
 class Condition(str, Enum):
@@ -96,30 +100,39 @@ class Consumable(Item):
     """Objeto de un solo uso (o varios): pociones, antidotos, vendas."""
 
     effect: ItemEffect = ItemEffect.HEAL
-    dice: int = 0          # cara del dado que se tira; 0 = cantidad fija
-    bonus: int = 0
+    # Cuanto cura: `2d4+2` o una cantidad fija como `5`. Irrelevante si el efecto es CURE.
+    healing: Dice = FLAT_ZERO
     condition: Condition | None = None   # que estado quita, si el efecto es CURE
     uses: int = 1
+
+    def __post_init__(self) -> None:
+        self.healing = Dice.parse(self.healing)
 
 
 @dataclass
 class Weapon(Item):
-    damage_die: int = 8
-    damage_bonus: int = 0
+    # El constructor acepta tambien la notacion: Weapon(..., damage="2d6+3").
+    damage: Dice = Dice(1, 8)
     attack_bonus: int = 0
     reach: int = 5
+
+    def __post_init__(self) -> None:
+        self.damage = Dice.parse(self.damage)
 
 
 @dataclass
 class Spell(Item):
     level: int = 1
-    damage_die: int | None = None
-    damage_bonus: int = 0
+    damage: Dice | None = None
     saving_ability: str = "dexterity"
     save_dc: int = 10
     condition: Condition | None = None
     duration_rounds: int = 0
     range_feet: int = 30
+
+    def __post_init__(self) -> None:
+        if self.damage is not None:
+            self.damage = Dice.parse(self.damage)
 
 
 EXPERIENCE_THRESHOLDS = (0, 300, 900, 2700, 6500, 14000, 23000, 34000, 48000, 64000, 85000)

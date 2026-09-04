@@ -10,7 +10,9 @@ requires-python = ">=3.11"
 dependencies = []
 
 [project.optional-dependencies]
+# Un extra por casa de IA; `ai` instala la de por defecto.
 ai = ["anthropic>=1.0"]
+anthropic = ["anthropic>=1.0"]
 
 [project.scripts]
 dnd-play = "dnd_engine.console:main"

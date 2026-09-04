@@ -91,16 +91,16 @@ def make_game():
 
     hero = Character("hero", "Aldric", max_hp=18, armor_class=14,
                      abilities=AbilityScores(strength=16))
-    hero.add_item(Weapon("longsword", "Espada larga", damage_die=8, damage_bonus=3,
+    hero.add_item(Weapon("longsword", "Espada larga", damage="1d8+3",
                          attack_bonus=5))
     hero.add_item(Item("iron-key", "Llave de hierro"))
-    hero.spells.append(Spell("firebolt", "Rayo de fuego", damage_die=6, range_feet=60))
+    hero.spells.append(Spell("firebolt", "Rayo de fuego", damage="1d6", range_feet=60))
     hero.spell_slots[1] = 2
     engine.add_character(hero)
     engine.place("hero", "cellar", (0, 0))
 
     goblin = Enemy("goblin-1", "Goblin", max_hp=9, armor_class=13, experience_reward=50)
-    goblin.add_item(Weapon("scimitar", "Cimitarra", damage_die=6, damage_bonus=1))
+    goblin.add_item(Weapon("scimitar", "Cimitarra", damage="1d6+1"))
     engine.add_character(goblin)
     engine.place("goblin-1", "cellar", (5, 3))
     return engine
@@ -491,28 +491,6 @@ def test_a_failed_narration_still_reports_a_rule_rejection():
     assert turn.acted is False
     assert "No puede ser:" in turn.narration
     assert "alcance" in turn.narration
-
-
-def test_overloaded_and_connection_errors_are_marked_retryable():
-    import anthropic
-
-    dungeon_master = DungeonMaster(fake_client())
-    overloaded = anthropic.APIStatusError(
-        "Overloaded", response=_FakeHttpResponse(529), body=None)
-    assert dungeon_master._translate(overloaded).retryable is True
-    assert dungeon_master._translate(
-        anthropic.APIConnectionError(request=None)).retryable is True
-
-    not_found = anthropic.NotFoundError(
-        "nope", response=_FakeHttpResponse(404), body=None)
-    assert dungeon_master._translate(not_found).retryable is False
-
-
-class _FakeHttpResponse:
-    def __init__(self, status_code):
-        self.status_code = status_code
-        self.headers = {}
-        self.request = None
 
 
 def test_the_console_says_the_turn_is_intact_after_a_transient_failure():
