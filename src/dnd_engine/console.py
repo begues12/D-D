@@ -511,7 +511,9 @@ class Console:
 
             setup = CampaignSetup.from_world(self.engine.world.world)
             self._dungeon_master = DungeonMaster(
-                story=story_brief(setup) if setup else "")
+                story=story_brief(setup) if setup else "",
+                provider=setup.ai_provider or None if setup else None,
+                model=setup.ai_model or None if setup else None)
         return self._dungeon_master
 
     @property

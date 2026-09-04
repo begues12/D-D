@@ -74,6 +74,22 @@ class Reply:
                 and (name is None or one.name == name)]
 
 
+@dataclass(frozen=True)
+class Model:
+    """Un modelo que se puede elegir, con lo que hace falta para decidir."""
+
+    id: str
+    name: str
+    note: str                    # para que sirve, en una linea
+    price_in: float              # dolares por millon de tokens de entrada
+    price_out: float             # ... y de salida
+    effort: bool = True          # acepta output_config.effort
+
+    @property
+    def price(self) -> str:
+        return f"${self.price_in:g} / ${self.price_out:g} por millon"
+
+
 class ProviderError(RuntimeError):
     """No se pudo ni abrir el cliente: falta el SDK o la credencial."""
 
@@ -85,9 +101,16 @@ class Provider:
     id = ""
     name = ""
     env_var = ""
-    default_model = ""
     package = ""             # el modulo que hay que instalar
     extra = "ai"             # el extra de pip que lo trae
+    models: tuple[Model, ...] = ()      # el primero es el de por defecto
+
+    @property
+    def default_model(self) -> str:
+        return self.models[0].id if self.models else ""
+
+    def model_info(self, identifier: str) -> Model | None:
+        return next((one for one in self.models if one.id == identifier), None)
 
     # -- credenciales ---------------------------------------------------
 
@@ -153,8 +176,18 @@ class AnthropicProvider(Provider):
     id = "anthropic"
     name = "Anthropic"
     env_var = "ANTHROPIC_API_KEY"
-    default_model = "claude-opus-5"
     package = "anthropic"
+    # Solo modelos que sirven para este motor. Los de la familia Fable quedan
+    # fuera a proposito: rechazan `tool_choice` forzado con un 400, y aqui se
+    # fuerza en las tres llamadas -interpretar, montar aventuras e ilustrar-.
+    models = (
+        Model("claude-opus-5", "Claude Opus 5",
+              "El mejor DM: entiende lo raro y narra bien.", 5.0, 25.0),
+        Model("claude-sonnet-5", "Claude Sonnet 5",
+              "Casi igual de bueno por menos de la mitad.", 2.0, 10.0),
+        Model("claude-haiku-4-5", "Claude Haiku 4.5",
+              "El mas barato y rapido; narra mas plano.", 1.0, 5.0, effort=False),
+    )
 
     def create_client(self, retries: int = DEFAULT_RETRIES) -> Any:
         anthropic = self.module()
@@ -175,8 +208,12 @@ class AnthropicProvider(Provider):
             optional["tools"] = tools
         if tool_choice is not None:
             optional["tool_choice"] = tool_choice
+        info = self.model_info(model)
+        if info is None or info.effort:
+            # Los modelos pequenos no aceptan `effort` y devuelven un error.
+            optional["output_config"] = {"effort": effort}
         response = client.messages.create(
-            model=model, max_tokens=max_tokens, output_config={"effort": effort},
+            model=model, max_tokens=max_tokens,
             system=system, messages=messages, **optional,
         )
         return self.normalize(response)

@@ -432,6 +432,9 @@ class CampaignSetup:
     premise: str = ""
     use_ai_dm: bool = False
     title: str = ""
+    # Que IA narra y con que modelo. Vacio = lo que diga el entorno.
+    ai_provider: str = ""
+    ai_model: str = ""
     # Plano de una aventura inventada por la IA. Si esta, manda sobre `scenario`,
     # que pasa a ser solo su nombre corto.
     blueprint: dict[str, Any] | None = None
@@ -488,6 +491,7 @@ class CampaignSetup:
                         for one in self.players],
             "scenario": self.scenario, "tone": self.tone, "difficulty": self.difficulty,
             "premise": self.premise, "use_ai_dm": self.use_ai_dm, "title": self.title,
+            "ai_provider": self.ai_provider, "ai_model": self.ai_model,
             "blueprint": self.blueprint,
         }
 
@@ -521,7 +525,8 @@ class CampaignSetup:
             f"  Grupo ({self.party_size}):",
             party,
             f"  Premisa:     {self.premise or '(ninguna)'}",
-            f"  DM con IA:   {'si' if self.use_ai_dm else 'no'}",
+            f"  DM con IA:   {'si' if self.use_ai_dm else 'no'}"
+            + (f" ({self.ai_model})" if self.use_ai_dm and self.ai_model else ""),
         ))
 
 

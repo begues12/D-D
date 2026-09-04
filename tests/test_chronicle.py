@@ -35,6 +35,7 @@ def window(root):
     wizard = game.wizard
     wizard._forge = FakeForge()
     wizard.ai_enabled_var.set(False)
+    wizard.next_step()                                 # el paso de la IA
     wizard.choose_adventure(wizard.adventures[0])      # el sotano del Dragon Rojo
     wizard.next_step()
     wizard.choose_archetype("guerrero")

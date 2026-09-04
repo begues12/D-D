@@ -1,8 +1,9 @@
 """Asistente de preparacion: tres pasos hasta empezar a jugar.
 
-    1. La aventura   - seis fichas: las escritas a mano y las que invente la IA.
-    2. El heroe      - el arquetipo, con lo que trae puesto.
-    3. El nombre     - y el resumen de lo elegido.
+    1. La IA         - que casa narra, con que modelo y con que clave.
+    2. La aventura   - seis fichas: las escritas a mano y las que invente la IA.
+    3. El heroe      - el arquetipo, con lo que trae puesto.
+    4. El nombre     - y el resumen de lo elegido.
 
 Cada paso es un metodo que dibuja dentro del mismo lienzo (`_render`), asi que
 anadir un paso -el tono, la dificultad, un segundo jugador- es anadirlo a
@@ -35,7 +36,8 @@ CARD_COLUMNS = 3
 # Los arquetipos caben en una sola fila: son pocos y se comparan mejor de un vistazo.
 ARCHETYPE_COLUMNS = 4
 
-STEPS = ("LA AVENTURA", "EL HEROE", "EL NOMBRE")
+STEPS = ("LA IA", "LA AVENTURA", "EL HEROE", "EL NOMBRE")
+STEP_AI, STEP_ADVENTURE, STEP_HERO, STEP_NAME = range(len(STEPS))
 
 
 @dataclass
@@ -156,11 +158,11 @@ class SetupWizard:
         self._busy = False
 
         self.provider = get_provider()
+        self.model = self.provider.default_model
         stored = load_api_key(self.provider.id) or self.provider.api_key()
 
         self.name_var = tk.StringVar(value="Aldric")
         self.hint_var = tk.StringVar(value="")
-        self.provider_var = tk.StringVar(value=self.provider.name)
         self.api_key_var = tk.StringVar(value=stored or "")
         # Con clave, la partida se juega narrada: es como esta pensada.
         self.ai_enabled_var = tk.BooleanVar(value=bool(stored))
@@ -233,12 +235,101 @@ class SetupWizard:
             label.configure(style="StepOn.TLabel" if number == self.step else "Step.TLabel")
         for number, segment in enumerate(self.segments):
             segment.configure(bg=PALETTE["gold"] if number <= self.step else PALETTE["line"])
-        (self._step_adventure, self._step_archetype, self._step_name)[self.step]()
+        (self._step_ai, self._step_adventure, self._step_archetype,
+         self._step_name)[self.step]()
         self.back_button.state(["disabled"] if self.step == 0 else ["!disabled"])
         self.next_button.configure(
             text="Empezar partida" if self.step == len(STEPS) - 1 else "Siguiente")
 
-    # -- paso 1: la aventura -----------------------------------------------
+    # -- paso 1: la IA -----------------------------------------------------
+
+    def _step_ai(self) -> None:
+        self._heading("Con que IA vas a jugar?",
+                      "El DM interpreta lo que escribes, narra lo que pasa y se "
+                      "inventa las aventuras. Sin clave se juega con comandos.")
+        self._provider_cards()
+        self._model_cards()
+        # El hueco que sobra empuja la clave abajo, en vez de estirar las fichas.
+        ttk.Frame(self.content, style="App.TFrame").pack(fill="both", expand=True)
+        self._key_panel()
+
+    def _provider_cards(self) -> None:
+        row = ttk.Frame(self.content, style="App.TFrame")
+        row.pack(fill="x", pady=(0, SPACE["md"]))
+        for number, provider in enumerate(PROVIDERS.values()):
+            row.columnconfigure(number, weight=1, uniform="provider")
+            card = Card(row, "CASA", provider.name,
+                        f"{len(provider.models)} modelos  ·  {provider.env_var}",
+                        on_click=(lambda one=provider: self.choose_provider(one)))
+            card.grid(row=0, column=number, sticky="nsew",
+                      padx=SPACE["sm"], pady=SPACE["sm"])
+            self.cards[provider.id] = card
+            card.select(provider.id == self.provider.id)
+
+    def _model_cards(self) -> None:
+        grid = ttk.Frame(self.content, style="App.TFrame")
+        grid.pack(fill="x")
+        models = self.provider.models
+        for column in range(max(1, len(models))):
+            grid.columnconfigure(column, weight=1, uniform="model")
+        if not models:
+            ttk.Label(grid, style="Subtitle.TLabel",
+                      text=f"{self.provider.name} no tiene modelos declarados.").pack(
+                anchor="w")
+            return
+        for number, model in enumerate(models):
+            card = Card(grid, model.price, model.name, model.note,
+                        footer=model.id,
+                        on_click=(lambda one=model: self.choose_model(one.id)))
+            card.grid(row=0, column=number, sticky="nsew",
+                      padx=SPACE["sm"], pady=SPACE["sm"])
+            self.cards[model.id] = card
+            card.select(model.id == self.model)
+
+    def _key_panel(self) -> None:
+        panel = ttk.Frame(self.content, style="Panel.TFrame", padding=SPACE["md"])
+        panel.pack(fill="x", pady=(SPACE["md"], 0))
+        panel.columnconfigure(1, weight=1)
+        ttk.Label(panel, text=f"Clave de {self.provider.name}",
+                  style="Panel.TLabel").grid(row=0, column=0, sticky="w",
+                                             padx=(0, SPACE["md"]))
+        ttk.Entry(panel, textvariable=self.api_key_var, style="Panel.TEntry",
+                  show="*").grid(row=0, column=1, sticky="ew")
+        options = ttk.Frame(panel, style="Panel.TFrame")
+        options.grid(row=1, column=1, sticky="w", pady=(SPACE["sm"], 0))
+        ttk.Checkbutton(options, text="Recordar la clave en este equipo",
+                        variable=self.remember_key_var,
+                        style="Dark.TCheckbutton").pack(side="left")
+        ttk.Checkbutton(options, text="Narrar con el DM de IA",
+                        variable=self.ai_enabled_var,
+                        style="Dark.TCheckbutton").pack(side="left", padx=(SPACE["md"], 0))
+        ttk.Label(panel, style="PanelMuted.TLabel",
+                  text=f"Se guarda cifrada en este equipo, nunca en la partida. "
+                       f"Tambien vale la variable {self.provider.env_var}.").grid(
+            row=2, column=1, sticky="w", pady=(SPACE["sm"], 0))
+
+    def choose_provider(self, provider: Any) -> None:
+        if provider.id == self.provider.id:
+            return
+        self.provider = provider
+        self.model = provider.default_model
+        self._load_key()
+        self._forge = None                 # el cliente anterior ya no sirve
+        self._render()
+
+    def choose_model(self, identifier: str) -> None:
+        self.model = identifier
+        self._forge = None
+        for one, card in self.cards.items():
+            if self.provider.model_info(one) is not None:
+                card.select(one == identifier)
+
+    def _load_key(self) -> None:
+        stored = load_api_key(self.provider.id) or self.provider.api_key() or ""
+        self.api_key_var.set(stored)
+        self.ai_enabled_var.set(bool(stored))
+
+    # -- paso 2: la aventura -----------------------------------------------
 
     def _step_adventure(self) -> None:
         self._heading("Que vais a jugar?",
@@ -279,43 +370,9 @@ class SetupWizard:
                                         command=self.invent, style="Tool.TButton")
         self.invent_button.grid(row=0, column=2, padx=(SPACE["sm"], 0))
 
-        ttk.Label(panel, text="Clave de la IA", style="PanelMuted.TLabel").grid(
-            row=1, column=0, sticky="w", pady=(SPACE["md"], 0))
-        credential = ttk.Frame(panel, style="Panel.TFrame")
-        credential.grid(row=1, column=1, columnspan=2, sticky="ew", pady=(SPACE["md"], 0))
-        credential.columnconfigure(1, weight=1)
-        chooser = ttk.Combobox(
-            credential, textvariable=self.provider_var, state="readonly", width=14,
-            values=[one.name for one in PROVIDERS.values()], style="Dark.TCombobox")
-        chooser.grid(row=0, column=0, padx=(0, SPACE["sm"]))
-        chooser.bind("<<ComboboxSelected>>", self.change_provider)
-        ttk.Entry(credential, textvariable=self.api_key_var, style="Panel.TEntry",
-                  show="*").grid(row=0, column=1, sticky="ew")
-        options = ttk.Frame(panel, style="Panel.TFrame")
-        options.grid(row=2, column=1, sticky="w", pady=(SPACE["sm"], 0))
-        ttk.Checkbutton(options, text="Recordar la clave en este equipo",
-                        variable=self.remember_key_var,
-                        style="Dark.TCheckbutton").pack(side="left")
-        ttk.Checkbutton(options, text="Narrar con el DM de IA",
-                        variable=self.ai_enabled_var,
-                        style="Dark.TCheckbutton").pack(side="left", padx=(SPACE["md"], 0))
         ttk.Label(panel, style="PanelMuted.TLabel",
-                  text=f"Con clave se juega narrado y con aventuras inventadas; "
-                       f"sin ella, con los comandos de siempre. "
-                       f"Tambien vale la variable {self.provider.env_var}.").grid(
-            row=3, column=1, columnspan=2, sticky="w", pady=(SPACE["sm"], 0))
-
-    def change_provider(self, _event=None) -> None:
-        """Cambiar de IA trae su clave guardada, si la hay."""
-        for provider in PROVIDERS.values():
-            if provider.name == self.provider_var.get():
-                self.provider = provider
-                break
-        stored = load_api_key(self.provider.id) or self.provider.api_key() or ""
-        self.api_key_var.set(stored)
-        self.ai_enabled_var.set(bool(stored))
-        self._forge = None                 # el cliente anterior ya no sirve
-        self._render()
+                  text=f"Las inventa {self.provider.name} con {self.model}.").grid(
+            row=1, column=1, sticky="w", pady=(SPACE["sm"], 0))
 
     def choose_adventure(self, adventure: Adventure) -> None:
         if self._busy:
@@ -356,7 +413,7 @@ class SetupWizard:
         if self._forge is not None:
             return self._forge
         try:
-            self._forge = ScenarioForge(provider=self.provider)
+            self._forge = ScenarioForge(provider=self.provider, model=self.model)
         except DungeonMasterError as error:
             messagebox.showerror("No puedo inventar aventuras", str(error))
             return None
@@ -439,7 +496,9 @@ class SetupWizard:
                            f"{weapon['name']} ({weapon.get('damage', '1d8')})").pack(
                 anchor="w", pady=(SPACE["xs"], 0))
             self._refresh_summary()
-        ttk.Label(panel, text="DM con IA: " + ("si" if self.ai_enabled_var.get() else "no"),
+        narrator = (f"{self.provider.name} · {self.model}"
+                    if self.ai_enabled_var.get() else "no (comandos de siempre)")
+        ttk.Label(panel, text=f"DM con IA: {narrator}",
                   style="PanelMuted.TLabel").pack(anchor="w", pady=(SPACE["sm"], 0))
 
     def _refresh_summary(self) -> None:
@@ -455,22 +514,33 @@ class SetupWizard:
     def next_step(self) -> None:
         if self._busy:
             return
-        if self.step == 0:
-            if self.adventure is None:
-                self.status_var.set("Elige una aventura.")
-                return
-            if self.adventure.forged and self.adventure.blueprint is None:
-                self.build_adventure()      # avanza el solo cuando termine
-                return
-        if self.step == 1 and self.archetype is None:
-            self.status_var.set("Elige un arquetipo.")
+        problem = self._missing()
+        if problem:
+            self.status_var.set(problem)
             return
-        if self.step == len(STEPS) - 1:
+        if (self.step == STEP_ADVENTURE and self.adventure.forged
+                and self.adventure.blueprint is None):
+            self.build_adventure()          # avanza el solo cuando termine
+            return
+        if self.step == STEP_NAME:
             self.play()
             return
         self.status_var.set("")
         self.step += 1
         self._render()
+
+    def _missing(self) -> str:
+        """Que falta para poder pasar de este paso. Vacio si no falta nada."""
+        if self.step == STEP_AI:
+            if self.ai_enabled_var.get() and not self.api_key_var.get().strip():
+                return f"Escribe la clave de {self.provider.name}, o quita el DM con IA."
+            if not self.model:
+                return "Elige un modelo."
+        if self.step == STEP_ADVENTURE and self.adventure is None:
+            return "Elige una aventura."
+        if self.step == STEP_HERO and self.archetype is None:
+            return "Elige un arquetipo."
+        return ""
 
     def previous_step(self) -> None:
         if self._busy or self.step == 0:
@@ -508,6 +578,9 @@ class SetupWizard:
             players=[PlayerSetup(name, self.archetype)],
             scenario=self.adventure.id,
             blueprint=self.adventure.blueprint,
+            use_ai_dm=self.ai_enabled_var.get(),
+            ai_provider=self.provider.id,
+            ai_model=self.model,
         )
         try:
             engine = build_campaign(setup)

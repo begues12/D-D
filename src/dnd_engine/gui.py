@@ -258,7 +258,8 @@ class GameWindow:
             return None
         if self._illustrator is None:
             try:
-                self._illustrator = Illustrator(provider=self.wizard.provider)
+                self._illustrator = Illustrator(provider=self.wizard.provider,
+                                                model=self.wizard.model)
             except DungeonMasterError:
                 return None
         return self._illustrator
